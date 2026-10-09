@@ -1,7 +1,9 @@
 # Cronos-Calendar
 
-A bar clock with a calendar popup, per-day tasks, and reminders that survive
-a reboot. Fork of Omarchy's built-in `omarchy.clock` widget.
+**Your tasks, on the clock you already stare at.** Click the time in the bar
+and the month opens with every task sitting on the day it is due — countdowns,
+priorities, tags, and reminders that still fire after a reboot. A fork of
+Omarchy's built-in `omarchy.clock` that keeps everything the clock had.
 
 ## Install
 
