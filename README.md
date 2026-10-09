@@ -5,6 +5,22 @@ and the month opens with every task sitting on the day it is due — countdowns,
 priorities, tags, and reminders that still fire after a reboot. A fork of
 Omarchy's built-in `omarchy.clock` that keeps everything the clock had.
 
+## Screenshots
+
+The month grid: every task sits in the day it is due, the dots on a day are
+its tasks, and overdue is the red one.
+
+![Month grid with each task on its own day](docs/monthly-view.png)
+
+The week strip over the composer and the list of everything outstanding,
+soonest first:
+
+![Week strip, task composer and pending list](docs/weekly-view.png)
+
+Priority and tags, both set from the composer:
+
+<img src="docs/priority.png" alt="Priority menu with none, high, medium and low" width="200"> <img src="docs/tags.png" alt="Tag field with a hashtag prompt" width="270">
+
 ## Install
 
 ```bash
@@ -77,24 +93,6 @@ rm -f ~/.local/state/omarchy/clock-tasks.json
 | arrows    | Move month / year                   |
 | `Enter`   | Commit the field being edited       |
 | `Esc`     | Clear the field, or discard the row edit |
-
-## Screenshots
-
-The month grid: every task sits in the day it is due, the dots on a day are
-its tasks, and overdue is the red one.
-
-![Month grid with each task on its own day](docs/monthly-view.png)
-
-The week strip over the composer and the list of everything outstanding,
-soonest first:
-
-![Week strip, task composer and pending list](docs/weekly-view.png)
-
-Priority and tags, both set from the composer:
-
-![Priority menu with none, high, medium and low](docs/priority.png)
-
-![Tag field with a hashtag prompt](docs/tags.png)
 
 ## How reminders survive a reboot
 
