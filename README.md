@@ -44,122 +44,24 @@ rm -f ~/.local/state/omarchy/clock-tasks.json
 
 ## What it does
 
-- **Clock and calendar.** Click the bar label for a month grid with ISO week
-  numbers and month stepping. Arrow keys move by month and year.
-- **Tasks per day.** Tasks belong to a day, not to a date. Add one with the
-  field at the top of the panel, tick it off with the checkbox, click a
-  badge to clear its deadline or reminder.
-- **Everything outstanding, soonest first.** The list opens on every pending task
-  in the store rather than on one day, grouped under the day it belongs to and
-  ordered by how soon it falls due. Tasks with no deadline go last, since a day
-  key says when a task is due and a task without an hour has not said that yet.
-  Click a group heading to narrow the list to that day, and click the day in the
-  grid to widen it back out — or click the day already showing. Deadlines that
-  have not passed yet wear the pending red here, because in a list spanning
-  several days "still owed" is what the red has to mean.
-- **The finished block belongs to a single day.** It is not drawn in the wider
-  view: a list of receipts under other days' tasks describes a day nobody is
-  looking at.
-- **A description per task.** Optional, typed in the field under the name and
-  drawn under the name in the row, a size down and dimmer. A name says what the
-  task is; this says what is still open about it — the room, the person, what to
-  bring — and it grows the row rather than pushing the name out of the list. Up
-  to two lines are shown, with an ellipsis if there is more; the rest is kept in
-  the file.
-- **Edit and delete from the row.** Every row has an edit button and a delete
-  button at its right edge. Editing opens that row's name, description, deadline
-  and reminder as fields in place — `Enter` or `󰄬` saves, `Esc` or `󰅖`
-  discards, and `Tab` walks from the name to the description to the deadline to
-  the buttons. Only one row is open at a time. A row being edited hides its
-  deadline and reminder badges and its delete button, so neither can be changed
-  by accident next to unsaved text; the badges keep their one-click clear for
-  when you are not editing, which is a different act from setting one.
-  A deadline that will not parse is refused rather than saved as nothing —
-  clearing a time you think you have just set is the one mistake here you would
-  not notice.
-- **Deleting is undoable.** The delete reports itself with a toast at the bottom
-  of the panel — *Task deleted · Undo* — which holds for six seconds and then
-  expires. Undo puts the task back exactly where it was, at the index it came
-  from, so a delete and its undo together change nothing. Only the newest delete
-  is offered: a second one replaces the first rather than queueing a second
-  promise nothing would honour.
-- **The composer, in five rows.** The name, the description, a row of two
-  buttons for priority and tags, the deadline and the reminder side by side,
-  then the list with the search at its foot. Each row is only what you need at
-  that point, and the two halves of the card share one row because they are one
-  question in two parts — *when is it due, and when will I hear about it* —
-  which is more use answered in a single look than in two.
-- **A deadline per task.** A due time, typed as `17:00` or nudged an hour at a
-  time with the `−` and `+` beside the field. The panel says which day it lands
-  on — *Due Fri 12 Sep at 17:00* — because `17:00` on its own does not
-  say whose day it is. Once it has passed the row is marked overdue.
-- **Reminders.** Per task: the day of the due date itself, or 1 to 5 days
-  before, or off. They keep firing across reboots. The chip you pick is
-  resolved back into the day it starts nagging — *Starts Fri 11 Sep* —
-  which is the half a bare `1` never said. They arrive **on the hour**, so a
-  task due at 14:20 is announced at 15:00 and not before.
-  A reminder is a **window** rather than one date: it opens `remindDaysBefore`
-  days ahead and closes on the task's own day, so a machine that was switched
-  off on the day it should have fired still delivers it when it comes back —
-  which `Persistent=true` alone could not do, because that replays the missed
-  timer run, not the day it belonged to. Nothing is re-armed after the task's
-  own day has passed.
-  On the task's own day the timer fires every hour, so the nagging **waits for
-  the deadline hour**: a task due at 17:00 stays silent until 17:00 instead of
-  starting at midnight. Days earlier in the window keep the whole day, since
-  being told in advance is the entire point of asking for a two-day reminder.
-- **How long is left.** A pending task with a deadline shows a countdown on its
-  badge — `2d 3h`, `45m` — instead of a bare hour, so "soon" is a number and not
-  a judgement. Once the hour is past the badge goes back to the time itself:
-  a countdown of zero is the one state that has stopped counting down.
-- **Search.** A field at the foot of the list narrows it by name, description
-  or tag as you type, with nothing to press and nothing to confirm. Press `s` to
-  reach it, `Esc` to leave it. A list the search emptied says so by name rather
-  than claiming there is nothing pending.
-- **Priority.** High, medium, low, or none. The mark sits beside the name —
-  `▲`, `●`, `○`, and a faint `○` when nothing is set — and pressing it walks to
-  the next one, so what draws the priority is also what sets it. Every row
-  keeps the column whether it has a value or not: a mark that only appears
-  once it exists is a control nobody can find. The editor carries the same
-  four as chips. The composer carries a flag that opens the choice as four
-  flags — red, amber, blue, grey — and colour is allowed there because a menu
-  is read one option at a time while a list is read as a whole; the mark on
-  the row stays colourless for exactly that reason, since red beside a name
-  already means work still owed. The three shapes are plain characters rather
-  than an icon font's glyphs so that a priority reads the same on a machine
-  without that font.
-- **Tags.** Open-ended, comma separated, and typed rather than picked — the
-  things worth filing under a subject are yours, and a fixed list would decide
-  them for you. The composer takes one through a button that opens a field and
-  the tags already on the task; the row shows them as chips, capped at three
-  with the overflow counted rather than hidden. Clicking a chip narrows the
-  list to it and clicking it again puts the list back, and the two ways of
-  narrowing now sandwich the list — tag chips above it, the field that narrows
-  by name below it — so both are filters, and neither is where a tag is written.
-  Matching is whole-tag, never a substring: clicking `#work` asks for that tag
-  and does not hand back `workspace`.
-- **Statistics.** A collapsed `STATS` block under the list holds the day's
-  streak, today's total, the last seven days, and how the pending work falls
-  across the three priorities. It is closed by default — these are the numbers
-  you go looking for, not the ones you need while writing a task down — and
-  opening it stays open.
-- **Week view.** The panel opens on the week rather than the month: seven cells
-  big enough to read and to hit, which is the question people open this for.
-  `Month` is one click away in the header and stays where it always was. The
-  chevrons and `[` `]` step whatever is on screen — a week in one view, a month
-  in the other — and the header follows, showing `5–11 OCT` over a week and
-  `OCTOBER 2026` over a month. Switching back to the month lands on the month
-  the week belongs to.
-- **A sound with the toast.** Optional in the only way that matters here: no
-  setting to switch on, no package to install, and a machine with none of it
-  gets silence rather than an error from a timer that runs while nobody is
-  watching. When there is something to play with, the alert goes out *after* a
-  notification that actually posted — never on its own. See Requirements for
-  what it looks for.
-- **Colour.** Red means still owed, including overdue work, an unreadable due
-  time, and — in the wider view — any deadline at all. Green means finished.
-  Nothing else uses those two colours, so a glance at a day tells you what is
-  outstanding.
+- **Clock and calendar.** Click the bar label: week or month grid with ISO
+  weeks, month stepping and the year rail — everything the stock clock had.
+- **Tasks per day.** Add one from the field at the top, tick it off, edit or
+  delete it from the row. Optional description under the name.
+- **Everything outstanding, soonest first.** Every pending task, grouped by
+  its day, with a countdown (`2d 3h`, `45m`) on each deadline. Click a group
+  heading to narrow to that day, click a day to widen back out.
+- **Deadline and reminder per task.** A due time (`17:00`, nudged with `−`/`+`)
+  and a reminder for the due day or 1–5 days before. Reminders survive a
+  reboot, arrive on the hour, and a missed one fires when the machine returns.
+- **Priority and tags.** Four priorities (`▲ ● ○`), tags typed as `#tag` —
+  clicking a chip filters the list. Search by name, description or tag.
+- **Statistics.** A collapsed `STATS` block: streak, today, the last seven
+  days, and how the pending work falls across the three priorities.
+- **Undo.** Deleting reports itself with a toast — *Task deleted · Undo* —
+  held for six seconds.
+- **Colour.** Red means still owed, green means finished. Nothing else uses
+  those two, so a glance at a day says what is outstanding.
 
 ### Keyboard
 
