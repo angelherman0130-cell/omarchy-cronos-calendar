@@ -320,6 +320,16 @@ to be due — and that is the question a task list exists for.
   focus to the deadline field — the point of a stepper is that the next digit
   has somewhere to land.
 
+### Security
+
+- **The task store is written `0600`.** `clock-tasks.json` holds every task's
+  name, description, deadline and reminder, and `$HOME` is traversable by every
+  other local account, so the plain `0644` an atomic write hands back made the
+  whole list readable by anyone logged into the machine. The mode is asserted
+  on every read-back — after each save and on each panel load — rather than
+  once at creation, because atomic writes recreate the file and give it the
+  umask's mode again. Nothing about the store's contents or its path changed.
+
 ## [2.0.0]
 
 First tagged release of this fork. The two breaking changes are listed first

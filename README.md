@@ -16,6 +16,30 @@ and add it to a bar section:
 omarchy bar put angelherman.cronos-calendar center
 ```
 
+## Uninstall
+
+```bash
+omarchy plugin remove angelherman.cronos-calendar --yes
+```
+
+That unloads the widget and, since it was cloned from `omarchy.clock`, puts
+the stock clock back where it was. It does not touch the reminder timer, which
+lives outside the plugin directory:
+
+```bash
+systemctl --user disable --now omarchy-clock-reminders.timer
+rm -f ~/.config/systemd/user/omarchy-clock-reminders.service \
+      ~/.config/systemd/user/omarchy-clock-reminders.timer
+systemctl --user daemon-reload
+```
+
+Your tasks stay in `~/.local/state/omarchy/clock-tasks.json`. Delete that file
+as well when you want the data itself gone:
+
+```bash
+rm -f ~/.local/state/omarchy/clock-tasks.json
+```
+
 ## What it does
 
 - **Clock and calendar.** Click the bar label for a month grid with ISO week

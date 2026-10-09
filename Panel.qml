@@ -1125,6 +1125,16 @@ Panel {
     tasksFile.setText(Tasks.serialize(root.taskStore))
   }
 
+  // The store holds task names and notes, and $HOME is traversable by every
+  // other local account, so a plain 0644 file here is readable by anyone on
+  // the machine. atomicWrites replaces the file on every save, which hands it
+  // back with the umask's mode, so the file is locked down on every read-back
+  // rather than once at creation — that is also the first moment the file is
+  // known to exist.
+  function secureStore() {
+    Quickshell.execDetached(["chmod", "600", root.taskStorePath])
+  }
+
   function startEditingLife() {
     root.editingLife = true
     Qt.callLater(function() {
@@ -1218,7 +1228,10 @@ Panel {
     watchChanges: true
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadTasks(text())
+    onLoaded: {
+      root.loadTasks(text())
+      root.secureStore()
+    }
     // First run: no file yet. loadTasks seeds an empty store, so the first
     // write is what creates it.
     onLoadFailed: root.loadTasks("")
