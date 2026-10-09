@@ -174,6 +174,24 @@ rm -f ~/.local/state/omarchy/clock-tasks.json
 | `Enter`   | Commit the field being edited       |
 | `Esc`     | Clear the field, or discard the row edit |
 
+## Screenshots
+
+The month grid: every task sits in the day it is due, the dots on a day are
+its tasks, and overdue is the red one.
+
+![Month grid with each task on its own day](docs/monthly-view.png)
+
+The week strip over the composer and the list of everything outstanding,
+soonest first:
+
+![Week strip, task composer and pending list](docs/weekly-view.png)
+
+Priority and tags, both set from the composer:
+
+![Priority menu with none, high, medium and low](docs/priority.png)
+
+![Tag field with a hashtag prompt](docs/tags.png)
+
 ## How reminders survive a reboot
 
 A single persistent `systemd --user` timer and service, not one timer per
