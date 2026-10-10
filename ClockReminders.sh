@@ -286,14 +286,33 @@ play_alert() {
   return 0
 }
 
+# Post one toast: $1 is the headline, $2 the body.
+#
+# Both are written to the sender's stdin instead of handed over as arguments.
+# omarchy-notification-send takes its headline on the command line, and a
+# command line is world-readable under a default procfs — a task title posted
+# that way reaches any other local account without that account ever touching
+# the 0600 store. NotifyStdin.py, sitting next to this file, makes the same
+# org.freedesktop.Notifications call with the text it is handed over a pipe,
+# and pipes live in the kernel, not in /proc.
+send_toast() {
+  local self dir script
+  self="$(self_path)"
+  dir="${self%/*}"
+  [[ "$dir" == "$self" ]] && dir="."
+  script="$dir/NotifyStdin.py"
+  [[ -r "$script" ]] || return 1
+  printf '%s\0%s\0' "$1" "$2" |
+    python3 "$script" --app-name "$APP_NAME" --glyph "$GLYPH" >/dev/null 2>&1
+}
+
 notify_due() {
   local store="${1:-$DEFAULT_STORE}"
-  local sender today rows day id text due remind remind_day now_hm body label
+  local today rows day id text due remind remind_day now_hm body label
 
   [[ -r "$store" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  sender="$(command -v omarchy-notification-send 2>/dev/null)" || return 0
-  [[ -n "$sender" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
 
   today="$(date +%F)"
 
@@ -407,7 +426,7 @@ notify_due() {
     # The sound follows a notification that actually went out, and only that
     # one: a toast that failed to post has not interrupted anybody, and an
     # alert on its own would be a clock ringing for nothing.
-    if "$sender" --app-name "$APP_NAME" -g "$GLYPH" "$text" "$body" >/dev/null 2>&1; then
+    if send_toast "$text" "$body"; then
       play_alert
     fi
   done <<<"$rows"

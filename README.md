@@ -152,8 +152,12 @@ become what every earlier reference pointed at, and a test would then report
 - Omarchy with the Quickshell shell (v4 / "Quattro" or later).
 - `jq`.
 - A systemd user session, for the reminder timer.
-- `omarchy-notification-send`. Without it the script sends nothing and exits
-  quietly rather than failing loudly.
+- `python3` with `python-dbus` — both ship with Omarchy (`python-dbus` arrives
+  with `uwsm`). The toast is posted by `NotifyStdin.py`, which reads the task
+  title from a pipe rather than from a command line: argv is world-readable
+  under `/proc`, so a title sent that way would reach any other local account.
+  Without them the script sends nothing and exits quietly rather than failing
+  loudly.
 
 For the optional alert, in this order and each entirely optional: `paplay`,
 `pw-play`, `aplay`, then `canberra-gtk-play`. The sample is looked for under

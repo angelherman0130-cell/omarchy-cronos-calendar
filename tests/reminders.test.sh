@@ -3,9 +3,12 @@
 #
 #   bash tests/reminders.test.sh
 #
-# The script's two dependencies are faked rather than stubbed: a `date` that
-# reports whatever day and hour the scenario asks for, and a notifier that
-# writes its arguments to a file instead of posting a toast. That is what makes
+# The script's dependencies are faked rather than stubbed: a `date` that
+# reports whatever day and hour the scenario asks for, and a toast sender that
+# writes its arguments *and its stdin* to a file instead of posting anything.
+# The stdin half is the point: the script hands the task title over a pipe
+# precisely so that it never appears in a process's argv, and a fake that only
+# looked at argv would pass while the leak was wide open. That is what makes
 # the interesting cases testable at all — a reminder's whole behaviour is a
 # function of *when* it runs, and today is the wrong day for every interesting
 # one of them.
@@ -43,12 +46,14 @@ esac
 exec "$REAL_DATE" "\$@"
 EOF
 
-cat > "$WORK/bin/omarchy-notification-send" <<'EOF'
+cat > "$WORK/bin/python3" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "${RECTEST_LOG:?}"
+# One line per toast: the argv the script built, then the payload it piped in.
+# NUL becomes "|" so the two fields stay countable and the line stays one line.
+printf '%s | %s\n' "$*" "$(tr '\0' '|')" >> "${RECTEST_LOG:?}"
 EOF
 
-chmod +x "$WORK/bin/date" "$WORK/bin/omarchy-notification-send"
+chmod +x "$WORK/bin/date" "$WORK/bin/python3"
 
 # The alert's players, all four, all fake. Each writes its own name and its
 # arguments to one log so a scenario can say which one was reached and with
@@ -147,6 +152,25 @@ scenario "a finished task never nags"             2026-10-10 18:00 "$done_store"
 v1="$(mkstore 1 "\"2026-10-10\":[{\"id\":\"t4\",\"text\":\"Old\",\"done\":false,\"dueTime\":\"17:00\",\"remindDaysBefore\":0}]")"
 scenario "v1 remind 0 still means off"            2026-10-10 18:00 "$v1" 0
 
+# ---- where the task title travels -----------------------------------------
+# The toast still carries the task's title — that is the point of a reminder —
+# but it must arrive on the sender's stdin and never in its argv. A command
+# line is world-readable under a default procfs, so a title sent that way
+# reaches any other local account and undoes the 0600 the store is kept in.
+: > "$RECTEST_LOG"
+FAKE_TODAY=2026-10-07 FAKE_NOW=12:00 bash "$SCRIPT" run "$window_store" >/dev/null 2>&1
+line="$(head -n 1 "$RECTEST_LOG")"
+argv_half="${line%% | *}"
+payload_half="${line#* | }"
+if [[ "$payload_half" == *"Ship it"* && "$argv_half" != *"Ship it"* ]]; then
+  printf 'ok   %s\n' "the task title rides on stdin, not in argv"
+  ((pass++))
+else
+  printf 'FAIL %s\n' "the task title rides on stdin, not in argv"
+  printf '       argv    | %s\n       payload | %s\n' "$argv_half" "$payload_half"
+  ((fail++))
+fi
+
 # ---- the alert -------------------------------------------------------------
 #
 # The sound is optional, so what has to hold is not that it plays but that it
@@ -215,15 +239,16 @@ XDG_DATA_DIRS="$WORK/nosample" \
 expect_sound "the fallback is canberra's own message event" "canberra-gtk-play -i message"
 
 # A machine with none of it: silence, and a run that still reports success.
-# The PATH below carries only what `run` needs — the shell, jq, the fake clock
-# and the fake notifier — so no player from the host can be found.
+# The PATH below carries only what `run` needs — the shell, jq, tr for the
+# fake sender, the fake clock and the fake sender itself — so no player from
+# the host can be found.
 NOPATH="$WORK/noplayer"
 mkdir -p "$NOPATH"
-for bin in bash jq; do
+for bin in bash jq tr; do
   ln -sf "$(command -v "$bin")" "$NOPATH/$bin"
 done
 ln -sf "$WORK/bin/date" "$NOPATH/date"
-ln -sf "$WORK/bin/omarchy-notification-send" "$NOPATH/omarchy-notification-send"
+ln -sf "$WORK/bin/python3" "$NOPATH/python3"
 
 : > "$RECTEST_LOG"
 : > "$RECTEST_SOUND_LOG"
