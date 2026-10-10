@@ -4,14 +4,14 @@
 #   bash tests/reminders.test.sh
 #
 # The script's dependencies are faked rather than stubbed: a `date` that
-# reports whatever day and hour the scenario asks for, and a toast sender that
-# writes its arguments *and its stdin* to a file instead of posting anything.
-# The stdin half is the point: the script hands the task title over a pipe
-# precisely so that it never appears in a process's argv, and a fake that only
-# looked at argv would pass while the leak was wide open. That is what makes
-# the interesting cases testable at all — a reminder's whole behaviour is a
-# function of *when* it runs, and today is the wrong day for every interesting
-# one of them.
+# reports whatever day and hour the scenario asks for, and wrappers around
+# every other command the script is allowed to run — each wrapper records the
+# argv it was handed and then execs the real one. The recording half is the
+# point: a reminder's whole behaviour is a function of *when* it runs, and
+# today is the wrong day for every interesting one of them, while the thing
+# worth protecting here is that the task title never appears on a command
+# line at all. A wrapper that only looked at behaviour would pass while that
+# guarantee was gone, because nothing in the script's output mentions argv.
 #
 # The pair of regressions this exists to hold down:
 #   * the window. A reminder used to fire only on its exact remind day, so a
@@ -33,12 +33,31 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 export PATH="$WORK/bin:$PATH"
-export RECTEST_LOG="$WORK/notified.log"
-mkdir -p "$WORK/bin"
+mkdir -p "$WORK/bin" "$WORK/log"
+
+# The widget reads the queue from a literal ~/.local/state, and so does the
+# script: HOME is pointed into the sandbox so a test run cannot be satisfied
+# by a queue that happens to exist on the machine it is running on.
+export HOME="$WORK/home"
+mkdir -p "$HOME"
+QUEUE="$HOME/.local/state/omarchy/clock-reminders.json"
+
+# One line per child process the script runs: its name, then its arguments.
+# Titles are the only thing this log is ever searched for.
+export RECTEST_ARGV_LOG="$WORK/log/argv.log"
+export RECTEST_SOUND_LOG="$WORK/log/sound.log"
+: > "$RECTEST_ARGV_LOG"
+: > "$RECTEST_SOUND_LOG"
 
 REAL_DATE="$(command -v date)"
+REAL_JQ="$(command -v jq)"
+REAL_MKDIR="$(command -v mkdir)"
+REAL_MV="$(command -v mv)"
+REAL_RM="$(command -v rm)"
+
 cat > "$WORK/bin/date" <<EOF
 #!/usr/bin/env bash
+printf 'date %s\n' "\$*" >> "\${RECTEST_ARGV_LOG:?}"
 case "\$1" in
   +%F) printf '%s' "\${FAKE_TODAY:?FAKE_TODAY is unset}"; exit 0 ;;
   +%H:%M) printf '%s' "\${FAKE_NOW:-00:00}"; exit 0 ;;
@@ -46,20 +65,26 @@ esac
 exec "$REAL_DATE" "\$@"
 EOF
 
-cat > "$WORK/bin/python3" <<'EOF'
+# Every remaining command the script may reach for, wrapped the same way:
+# argv into the log, then the real thing. jq is in that list even though it
+# only ever reads the store and answers on a pipe, because "it probably does
+# not see the title" is exactly the assumption this log exists to replace.
+for pair in "jq:$REAL_JQ" "mkdir:$REAL_MKDIR" "mv:$REAL_MV" "rm:$REAL_RM"; do
+  name="${pair%%:*}"
+  real="${pair#*:}"
+  cat > "$WORK/bin/$name" <<EOF
 #!/usr/bin/env bash
-# One line per toast: the argv the script built, then the payload it piped in.
-# NUL becomes "|" so the two fields stay countable and the line stays one line.
-printf '%s | %s\n' "$*" "$(tr '\0' '|')" >> "${RECTEST_LOG:?}"
+printf '%s %s\n' "$name" "\$*" >> "\${RECTEST_ARGV_LOG:?}"
+exec "$real" "\$@"
 EOF
-
-chmod +x "$WORK/bin/date" "$WORK/bin/python3"
+  chmod +x "$WORK/bin/$name"
+done
+chmod +x "$WORK/bin/date"
 
 # The alert's players, all four, all fake. Each writes its own name and its
 # arguments to one log so a scenario can say which one was reached and with
 # what — the point of the fallbacks is the order they are tried in, and an
 # "it played something" assertion would not notice if the order changed.
-export RECTEST_SOUND_LOG="$WORK/sound.log"
 for player in paplay pw-play aplay canberra-gtk-play; do
   cat > "$WORK/bin/$player" <<'EOF'
 #!/usr/bin/env bash
@@ -80,20 +105,47 @@ export XDG_DATA_DIRS="$SAMPLE_DIR"
 pass=0
 fail=0
 
-# scenario <label> <fake today> <fake now> <store> <expected notifications>
+ok() { printf 'ok   %s\n' "$1"; ((pass++)); }
+bad() {
+  printf 'FAIL %s\n' "$1"
+  shift
+  local line
+  for line in "$@"; do printf '       %s\n' "$line"; done
+  ((fail++))
+}
+
+# How many reminders the last run put in the queue. A run with nothing due
+# writes no file at all — the queue is only ever replaced when there is
+# something to say — so an absent file counts as zero rather than as an error.
+queue_count() {
+  [[ -s "$QUEUE" ]] || { printf '0'; return 0; }
+  "$REAL_JQ" -r '.items | length' "$QUEUE" 2>/dev/null || printf '0'
+}
+
+# scenario <label> <fake today> <fake now> <store> <expected reminders>
+#
+# Two things are asserted for every row, and the second is the one the first
+# used to hide: the count, and that the run itself succeeded. The timer fires
+# hourly on a due day, so most runs have nothing to do, and a `run` that
+# exits non-zero for having nothing to do is a unit that is red all day for
+# reasons nobody will ever look into.
 scenario() {
-  local label="$1" day="$2" now="$3" store="$4" want="$5" got
-  : > "$RECTEST_LOG"
-  : > "$RECTEST_SOUND_LOG"
+  local label="$1" day="$2" now="$3" store="$4" want="$5" got status
+  rm -f "$QUEUE"
   FAKE_TODAY="$day" FAKE_NOW="$now" bash "$SCRIPT" run "$store" >/dev/null 2>&1
-  got="$(grep -c . "$RECTEST_LOG")"
-  if [[ "$got" == "$want" ]]; then
-    printf 'ok   %s\n' "$label"
-    ((pass++))
+  status=$?
+  got="$(queue_count)"
+  if [[ "$status" -ne 0 ]]; then
+    bad "$label" "| run exited $status" "| queue: $(cat "$QUEUE" 2>/dev/null)"
+  elif [[ "$want" == "0" && -e "$QUEUE" ]]; then
+    # A batch nobody asked for is not the same as no batch: writing an empty
+    # one over the file would replace a batch the widget has not shown yet
+    # with a file that says "nothing", and the reminder would be gone.
+    bad "$label" "| wrote a queue for a run with nothing due" "| $(cat "$QUEUE")"
+  elif [[ "$got" == "$want" ]]; then
+    ok "$label"
   else
-    printf 'FAIL %s (expected %s, got %s)\n' "$label" "$want" "$got"
-    sed 's/^/       | /' "$RECTEST_LOG"
-    ((fail++))
+    bad "$label" "| expected $want, got $got" "| queue: $(cat "$QUEUE" 2>/dev/null)"
   fi
 }
 
@@ -103,8 +155,8 @@ scenario() {
 # each store was written immediately before it was read and never reached for
 # again — the moment a later scenario re-created it, every earlier reference
 # silently pointed at the newest fixture and read the wrong day. The alert
-# tests hit exactly that, and "no notification" was the honest answer they
-# got from a store they were never given.
+# tests hit exactly that, and "no reminder" was the honest answer they got
+# from a store they were never given.
 mkstore() {
   local path
   path="$(mktemp "$WORK/store.XXXXXX.json")"
@@ -153,35 +205,80 @@ v1="$(mkstore 1 "\"2026-10-10\":[{\"id\":\"t4\",\"text\":\"Old\",\"done\":false,
 scenario "v1 remind 0 still means off"            2026-10-10 18:00 "$v1" 0
 
 # ---- where the task title travels -----------------------------------------
-# The toast still carries the task's title — that is the point of a reminder —
-# but it must arrive on the sender's stdin and never in its argv. A command
-# line is world-readable under a default procfs, so a title sent that way
-# reaches any other local account and undoes the 0600 the store is kept in.
-: > "$RECTEST_LOG"
+# The reminder still carries the task's title — that is the point of a
+# reminder — but it must reach the queue file and nothing else. Anything it
+# does on a command line is world-readable under an ordinary /proc and undoes
+# the 0600 the store is kept in, so the assertions are three: it is in the
+# file, the file is owner-only, and no child process this run started was
+# handed it as an argument.
+: > "$RECTEST_ARGV_LOG"
+rm -f "$QUEUE"
 FAKE_TODAY=2026-10-07 FAKE_NOW=12:00 bash "$SCRIPT" run "$window_store" >/dev/null 2>&1
-line="$(head -n 1 "$RECTEST_LOG")"
-argv_half="${line%% | *}"
-payload_half="${line#* | }"
-if [[ "$payload_half" == *"Ship it"* && "$argv_half" != *"Ship it"* ]]; then
-  printf 'ok   %s\n' "the task title rides on stdin, not in argv"
-  ((pass++))
+
+if [[ -s "$QUEUE" ]] && [[ "$("$REAL_JQ" -r '.items[0].text' "$QUEUE" 2>/dev/null)" == "Ship it" ]]; then
+  ok "the title is queued for the widget"
 else
-  printf 'FAIL %s\n' "the task title rides on stdin, not in argv"
-  printf '       argv    | %s\n       payload | %s\n' "$argv_half" "$payload_half"
-  ((fail++))
+  bad "the title is queued for the widget" "| queue: $(cat "$QUEUE" 2>/dev/null)"
+fi
+
+mode="$(stat -c %a "$QUEUE" 2>/dev/null || printf missing)"
+if [[ "$mode" == "600" ]]; then
+  ok "the queue file is owner-only"
+else
+  bad "the queue file is owner-only" "| mode: $mode"
+fi
+
+# The shape the widget reads. Nothing here is cosmetic: `at` is how a card
+# from an ended session is told apart from one written this minute, and `run`
+# is how two batches in the same second are told apart from a repeat.
+if "$REAL_JQ" -e '.version == 1 and (.at | type == "number") and (.run | type == "string")
+    and (.items | length > 0) and (.items[0].body | type == "string")' \
+    "$QUEUE" >/dev/null 2>&1; then
+  ok "the queue carries the fields the widget reads"
+else
+  bad "the queue carries the fields the widget reads" "| queue: $(cat "$QUEUE")"
+fi
+
+# The wrappers have to have run, or the assertion after this one is vacuous:
+# an empty log proves nothing except that no command was recorded.
+if [[ -s "$RECTEST_ARGV_LOG" ]]; then
+  ok "the run's child processes were recorded at all"
+else
+  bad "the run's child processes were recorded at all" "| the argv wrappers did not run"
+fi
+
+if grep -q "Ship it" "$RECTEST_ARGV_LOG"; then
+  bad "the title never appears in a child process's argv" "| $(grep "Ship it" "$RECTEST_ARGV_LOG" | head -n 1)"
+else
+  ok "the title never appears in a child process's argv"
+fi
+
+# Titles that would break the JSON are escaped rather than passed along: a
+# task called 50% "done" is a task whose title holds a quote, and a queue
+# written with it unescaped would be a file that is not an object at all —
+# the widget would read a parse error where a reminder should be. Both the
+# escape and the round trip are worth pinning: jq parsing it back to the
+# original is what proves the escape was the right one.
+quote_store="$(mkstore 2 "\"2026-10-07\":[{\"id\":\"t5\",\"text\":\"50% \\\"done\\\"\",\"done\":false,\"dueTime\":\"17:00\",\"remindDaysBefore\":5}]")"
+rm -f "$QUEUE"
+FAKE_TODAY=2026-10-07 FAKE_NOW=18:00 bash "$SCRIPT" run "$quote_store" >/dev/null 2>&1
+if "$REAL_JQ" -e '.items[0].text == "50% \"done\""' "$QUEUE" >/dev/null 2>&1; then
+  ok "quotes and backslashes in a title survive the queue"
+else
+  bad "quotes and backslashes in a title survive the queue" "| queue: $(cat "$QUEUE" 2>/dev/null)"
 fi
 
 # ---- the alert -------------------------------------------------------------
 #
 # The sound is optional, so what has to hold is not that it plays but that it
-# plays in the right places: after a notification that actually went out,
-# never after one that did not, and never with an error when there is nothing
-# there to play it.
+# plays in the right places: after a batch that actually landed, never after
+# one that did not, and never with an error when there is nothing there to
+# play it.
 #
-# Players are fired in the background so a slow one cannot hold up the toast,
-# which means the script may exit before the fake has written its line. Poll
-# rather than sleep: the line is there as soon as it is there, and the test
-# does not pay the slow machine's penalty on the fast one.
+# Players are fired in the background so a slow one cannot hold up the queue
+# write, which means the script may exit before the fake has written its line.
+# Poll rather than sleep: the line is there as soon as it is there, and the
+# test does not pay the slow machine's penalty on the fast one.
 wait_for_sound() {
   local i
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
@@ -193,18 +290,15 @@ wait_for_sound() {
 
 sound_scenario() {
   local label="$1" day="$2" now="$3" store="$4" want="$5" got
-  : > "$RECTEST_LOG"
+  rm -f "$QUEUE"
   : > "$RECTEST_SOUND_LOG"
   FAKE_TODAY="$day" FAKE_NOW="$now" bash "$SCRIPT" run "$store" >/dev/null 2>&1
   wait_for_sound
   got="$(grep -c . "$RECTEST_SOUND_LOG" 2>/dev/null || true)"
   if [[ "$got" == "$want" ]]; then
-    printf 'ok   %s\n' "$label"
-    ((pass++))
+    ok "$label"
   else
-    printf 'FAIL %s (expected %s sounds, got %s)\n' "$label" "$want" "$got"
-    sed 's/^/       | /' "$RECTEST_SOUND_LOG"
-    ((fail++))
+    bad "$label" "| expected $want sounds, got $got" "| $(cat "$RECTEST_SOUND_LOG")"
   fi
 }
 
@@ -212,24 +306,23 @@ expect_sound() {
   local label="$1" want="$2" got
   got="$(head -n 1 "$RECTEST_SOUND_LOG" 2>/dev/null)"
   if [[ "$got" == "$want" ]]; then
-    printf 'ok   %s\n' "$label"
-    ((pass++))
+    ok "$label"
   else
-    printf 'FAIL %s (expected [%s], got [%s])\n' "$label" "$want" "$got"
-    ((fail++))
+    bad "$label" "| expected [$want], got [$got]"
   fi
 }
 
-# A notification that goes out is followed by the first player in line,
-# handed the sample that was found under the declared data dir.
-sound_scenario "a sent notification is followed by the alert" \
+# A batch that lands is followed by the first player in line, handed the
+# sample that was found under the declared data dir.
+sound_scenario "a queued batch is followed by the alert" \
   2026-10-07 12:00 "$window_store" 1
 expect_sound "the alert uses paplay first, with the sample" \
   "paplay $SAMPLE_DIR/sounds/freedesktop/stereo/message.oga"
 
-# Nothing sent, nothing heard. A toast that failed to post has not
-# interrupted anybody, and a bell on its own is a clock ringing for nothing.
-sound_scenario "no notification, no sound" 2026-10-03 12:00 "$window_store" 0
+# Nothing queued, nothing heard. A reminder the widget was never given has
+# not interrupted anybody, and a bell on its own is a clock ringing for
+# nothing.
+sound_scenario "no reminder, no sound" 2026-10-03 12:00 "$window_store" 0
 
 # No sample the players can read: the desktop's own event sound is asked for
 # instead, by name, rather than a player being handed a file it cannot play.
@@ -239,34 +332,28 @@ XDG_DATA_DIRS="$WORK/nosample" \
 expect_sound "the fallback is canberra's own message event" "canberra-gtk-play -i message"
 
 # A machine with none of it: silence, and a run that still reports success.
-# The PATH below carries only what `run` needs — the shell, jq, tr for the
-# fake sender, the fake clock and the fake sender itself — so no player from
+# The PATH below carries only what `run` needs — the shell, jq, the three
+# file commands the queue write uses and the fake clock — so no player from
 # the host can be found.
 NOPATH="$WORK/noplayer"
 mkdir -p "$NOPATH"
-for bin in bash jq tr; do
+for bin in bash jq mkdir mv rm; do
   ln -sf "$(command -v "$bin")" "$NOPATH/$bin"
 done
 ln -sf "$WORK/bin/date" "$NOPATH/date"
-ln -sf "$WORK/bin/python3" "$NOPATH/python3"
 
-: > "$RECTEST_LOG"
+rm -f "$QUEUE"
 : > "$RECTEST_SOUND_LOG"
 if PATH="$NOPATH" XDG_DATA_DIRS="$WORK/nosample" FAKE_TODAY=2026-10-07 FAKE_NOW=12:00 \
   bash "$SCRIPT" run "$window_store" >/dev/null 2>&1; then
-  printf 'ok   %s\n' "no player at all still exits cleanly"
-  ((pass++))
+  ok "no player at all still exits cleanly"
 else
-  printf 'FAIL %s\n' "no player at all still exits cleanly"
-  ((fail++))
+  bad "no player at all still exits cleanly"
 fi
 if [[ ! -s "$RECTEST_SOUND_LOG" ]]; then
-  printf 'ok   %s\n' "no player at all is silent"
-  ((pass++))
+  ok "no player at all is silent"
 else
-  printf 'FAIL %s\n' "no player at all is silent"
-  sed 's/^/       | /' "$RECTEST_SOUND_LOG"
-  ((fail++))
+  bad "no player at all is silent" "| $(cat "$RECTEST_SOUND_LOG")"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

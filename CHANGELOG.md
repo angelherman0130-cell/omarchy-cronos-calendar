@@ -329,14 +329,22 @@ to be due — and that is the question a task list exists for.
   on every read-back — after each save and on each panel load — rather than
   once at creation, because atomic writes recreate the file and give it the
   umask's mode again. Nothing about the store's contents or its path changed.
-- **A reminder's title never reaches a command line.** The toast used to be
-  posted by `omarchy-notification-send`, which takes its headline as an
-  argument, and `/proc/<pid>/cmdline` is readable by every local account — so
-  a task title was on offer to anyone logged into the machine for as long as
-  the toast took to post, which undoes the `0600` above with a single command
-  line. `NotifyStdin.py` now posts the same notification with the title and
-  body read from a pipe. The toast itself is unchanged; only the road the text
-  took to get there is different.
+- **A reminder's title never leaves the widget.** Two roads out of this
+  plugin's store were both command lines. `omarchy-notification-send` takes
+  its headline as an argument, and `/proc/<pid>/cmdline` is readable by every
+  local account; posting through `NotifyStdin.py` took the title off *that*
+  command line and put it on a pipe, but the session's notification host then
+  persisted the popup it had been shown by re-running a shell with the whole
+  JSON as an argument — the same exposure, one process further along.
+  Reminders now leave this plugin only as a `0600` file beside the store
+  (`~/.local/state/omarchy/clock-reminders.json`, written atomically), and
+  the widget draws the card itself from that file: file, QML, screen, with no
+  process in between to carry the text. The card replaces the system toast —
+  same hour, same alert sound, same "until you tick it off" — and both
+  senders are gone with it, `NotifyStdin.py` and the `python-dbus`
+  dependency it needed included. Whether a batch is shown at all (fifteen
+  minutes, once per run id) lives in `ReminderQueue.js`, beside the unit
+  tests that hold it down.
 
 ## [2.0.0]
 

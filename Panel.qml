@@ -1003,8 +1003,11 @@ Panel {
   // ---- Reminders
   //
   // A reminder is not a row in this panel and not a timer this panel arms. It
-  // is a systemd *service* that reads this store and notifies about whatever is
-  // due, driven by one persistent user timer installed by ClockReminders.sh.
+  // is a systemd *service* that reads this store and queues whatever is due,
+  // driven by one persistent user timer installed by ClockReminders.sh. The
+  // bar widget on the other side of BarWidget.qml watches that queue and
+  // draws the card; this panel only ever writes the tasks the queue is built
+  // from.
   //
   // The reason it is not done from here is the whole point of the design. A
   // timer armed from the widget — with systemd-run, per task, re-armed every

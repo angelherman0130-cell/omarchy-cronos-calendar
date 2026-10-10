@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "ReminderQueue.js" as ReminderQueue
 
 // Date/time label for the bar, and the host for the calendar popup.
 //
@@ -131,6 +132,66 @@ BarWidget {
       root.injectPanel()
       Qt.callLater(root.injectPanel)
     }
+  }
+
+  // ---- Reminders, widget side.
+  //
+  // ClockReminders.sh decides *what* is due and writes it here; this side
+  // decides *how it is shown*, and the split is deliberate. Posting the
+  // reminder as a notification would hand the task title to the session's
+  // notification host, which persists every popup it is given by re-running a
+  // shell with the whole JSON as an argument — a command line any other local
+  // account can read off /proc while it lasts. Reading a 0600 file and
+  // painting the card here keeps the title inside the widget's own address
+  // space: file, QML, screen, with no process in between to leak it.
+  readonly property string reminderQueuePath: Color.stateHome + "/omarchy/clock-reminders.json"
+
+  // The batch on screen, and the id of the batch that put it there. The id
+  // exists so a file event that re-reports the same batch cannot show it
+  // twice; the array is what the card renders.
+  property var reminderItems: []
+  property string reminderRun: ""
+
+  FileView {
+    id: reminderQueue
+    path: root.reminderQueuePath
+    watchChanges: true
+    printErrors: false
+    // fileChanged only announces that the file moved; reload() is what makes
+    // the new bytes readable, and reading text() here would see the old ones.
+    onFileChanged: reload()
+    onLoaded: root.consumeReminders(text())
+  }
+
+  // Whether to show a batch — and why not, when not — is ReminderQueue's call,
+  // not this file's: it is the same kind of pure, Qt-free decision as Tasks.js,
+  // so it is unit-tested under plain node instead of being read off a screen.
+  // The only thing decided here is what to do with the answer.
+  function consumeReminders(raw) {
+    var verdict = ReminderQueue.pick(raw, Date.now() / 1000, root.reminderRun)
+    if (!verdict.show) {
+      // "empty" is the ordinary state of a machine with nothing outstanding,
+      // and "no-items" is a batch the script never writes: logging either
+      // would be a line per shell start saying nothing happened.
+      if (verdict.reason !== "empty" && verdict.reason !== "no-items")
+        console.log("Cronos-Calendar: queue not shown (" + verdict.reason + ")")
+      return
+    }
+
+    // The batch is rare — hourly at most, and only while something is
+    // outstanding — so one line in the shell log costs nothing and is the
+    // only trace there is that a reminder reached the screen.
+    console.log("Cronos-Calendar: showing", verdict.items.length, "reminder(s)")
+    root.reminderRun = verdict.run
+    root.reminderItems = verdict.items
+  }
+
+  ReminderPopup {
+    id: reminderPopup
+    anchorItem: button
+    bar: root.bar
+    items: root.reminderItems
+    onDismissed: root.reminderItems = []
   }
 
   IpcHandler {

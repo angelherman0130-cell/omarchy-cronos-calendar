@@ -13,8 +13,8 @@
 #                          passes the path it resolved for this file, which keeps
 #                          the generated unit pointing at the copy that is
 #                          actually installed rather than at a guess.
-#   run <store.json>       Send the notifications that are due right now. This
-#                          is what the timer calls, and what a human can call by
+#   run <store.json>       Queue the reminders that are due right now. This is
+#                          what the timer calls, and what a human can call by
 #                          hand to check it works.
 #
 # Why the timer lives here instead of in the bar widget: the widget would have
@@ -30,12 +30,6 @@ set -uo pipefail
 
 SERVICE_NAME="omarchy-clock-reminders.service"
 TIMER_NAME="omarchy-clock-reminders.timer"
-
-# The glyph on the toast. A reminder is a clock ringing, not a task, so the
-# toast is identifiable as "the calendar talking to me" rather than as whatever
-# else happened to post a notification.
-GLYPH="󰢌"
-APP_NAME="Cronos-Calendar"
 
 # The store is the widget's file, not ours. The panel passes it in so the two
 # can never disagree about which file is authoritative.
@@ -189,11 +183,22 @@ install_units() {
   systemctl --user enable --now "$TIMER_NAME" >/dev/null 2>&1
 }
 
-# ---- Sending
+# ---- Queue
 #
-# Task text is the notification's headline, which is the whole point: a toast
-# that says "Reminder" tells you nothing, and a toast that says "Buy milk"
-# tells you what to go and do. The details sit underneath it.
+# Task text is the reminder's headline, which is the whole point: a card that
+# says "Reminder" tells you nothing, and a card that says "Buy milk" tells you
+# what to go and do. The details sit underneath it.
+#
+# It is delivered as a file rather than as a notification, and that is a
+# deliberate privacy decision rather than a preference. This script runs under
+# systemd, so anything it hands to another process on a command line is a
+# command line — world-readable under an ordinary /proc, reachable by any
+# other local account for as long as that process lives. The session bus makes
+# it worse rather than better: Omarchy's notification host persists every
+# popup it is shown by re-running a shell with the whole JSON as an argument,
+# so a title posted that way is a title in somebody else's argv. The task
+# store is a 0600 file and stays one: the title leaves it into a variable,
+# into this script's own queue file, and nowhere else.
 
 # The panel names a day the way a person would ("Fri 12 Sep") rather than as a
 # number, so DD/MM here is this script's own shape rather than a shared one —
@@ -211,9 +216,9 @@ day_label() {
 # Optional by construction: no setting to switch on, no package this file asks
 # anybody to install, and a machine with neither a player nor a sample gets
 # silence rather than an error from a timer that runs while nobody is watching.
-# The toast is never held up by any of this — the sound is fired and left to
-# finish on its own, so a slow or hung player cannot delay or drop the
-# notification it was supposed to accompany.
+# The reminder is never held up by any of this — the sound is fired and left to
+# finish on its own, so a slow or hung player cannot delay or drop the batch it
+# was supposed to accompany.
 #
 # The sample is looked for under XDG_DATA_DIRS when that is set, and under the
 # two system directories only when it is not. That is what makes the search
@@ -286,33 +291,88 @@ play_alert() {
   return 0
 }
 
-# Post one toast: $1 is the headline, $2 the body.
+# Where the batch goes. Next to the store it is read from, owned by the same
+# account, and the widget names the very same path — the two are a pair, so
+# neither side is free to invent it alone. Note the directory: Color.stateHome
+# in the widget is a literal ~/.local/state rather than $XDG_STATE_HOME, and
+# the two disagree on a machine that moved its state elsewhere.
+queue_file() {
+  printf '%s\n' "$HOME/.local/state/omarchy/clock-reminders.json"
+}
+
+# Escape a value into JSON_ESCAPED.
 #
-# Both are written to the sender's stdin instead of handed over as arguments.
-# omarchy-notification-send takes its headline on the command line, and a
-# command line is world-readable under a default procfs — a task title posted
-# that way reaches any other local account without that account ever touching
-# the 0600 store. NotifyStdin.py, sitting next to this file, makes the same
-# org.freedesktop.Notifications call with the text it is handed over a pipe,
-# and pipes live in the kernel, not in /proc.
-send_toast() {
-  local self dir script
-  self="$(self_path)"
-  dir="${self%/*}"
-  [[ "$dir" == "$self" ]] && dir="."
-  script="$dir/NotifyStdin.py"
-  [[ -r "$script" ]] || return 1
-  printf '%s\0%s\0' "$1" "$2" |
-    python3 "$script" --app-name "$APP_NAME" --glyph "$GLYPH" >/dev/null 2>&1
+# Deliberately not `$(json_escape ...)`: a command substitution forks, and the
+# invariant this file is built around is that no child process is ever handed
+# the title at all. Escaping in this shell keeps it in this shell's memory,
+# where it already was.
+#
+# Control characters are already flattened by the row reader above, so only
+# the two JSON can actually be broken by are load-bearing here; the three
+# escapes after them are a backstop for anything upstream that changes.
+json_escape() {
+  JSON_ESCAPED="$1"
+  JSON_ESCAPED="${JSON_ESCAPED//\\/\\\\}"
+  JSON_ESCAPED="${JSON_ESCAPED//\"/\\\"}"
+  JSON_ESCAPED="${JSON_ESCAPED//$'\n'/\\n}"
+  JSON_ESCAPED="${JSON_ESCAPED//$'\r'/\\r}"
+  JSON_ESCAPED="${JSON_ESCAPED//$'\t'/\\t}"
+}
+
+# Write the batch as one file replacement:
+#
+#   {"version":1,"at":<epoch>,"run":"<epoch>-<pid>","items":[{"text":…,"body":…}]}
+#
+# What the widget makes of the three fields:
+#   at   epoch seconds, so the widget can tell a batch written this minute
+#        from one left behind by a session that has since ended.
+#   run  the epoch plus this process's pid, so two runs inside the same second
+#        are two batches — without it the second would read as a repeat of the
+#        first and never be shown.
+#
+# Written to a temporary file in the same directory and renamed over the
+# target: the widget watches this file, and a half-written one would be a
+# JSON parse error on screen where a reminder should be. umask 077 is applied
+# in the subshell that creates it, so the title never exists as a file with
+# anything but owner-only permissions — not for the millisecond before a
+# chmod would have run.
+queue_batch() {
+  local path dir tmp at run i sep="" json text body
+  ((${#queue_texts[@]})) || return 1
+
+  path="$(queue_file)"
+  dir="${path%/*}"
+  mkdir -p "$dir" 2>/dev/null || return 1
+
+  at="$(date +%s 2>/dev/null)" || return 1
+  run="$at-$$"
+
+  json='{"version":1,"at":'"$at"',"run":"'"$run"'","items":['
+  for i in "${!queue_texts[@]}"; do
+    json_escape "${queue_texts[$i]}"
+    text="$JSON_ESCAPED"
+    json_escape "${queue_bodies[$i]}"
+    body="$JSON_ESCAPED"
+    json+="$sep{\"text\":\"$text\",\"body\":\"$body\"}"
+    sep=","
+  done
+  json+=']}'
+
+  tmp="$path.tmp.$$"
+  if ! ( umask 077 && printf '%s\n' "$json" >"$tmp" ); then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
 }
 
 notify_due() {
   local store="${1:-$DEFAULT_STORE}"
   local today rows day id text due remind remind_day now_hm body label
+  local -a queue_texts=() queue_bodies=()
 
   [[ -r "$store" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  command -v python3 >/dev/null 2>&1 || return 0
 
   today="$(date +%F)"
 
@@ -386,7 +446,7 @@ notify_due() {
     # which threw away every reminder whose day fell while the machine was
     # switched off. Persistent=true does not save it: that replays the missed
     # timer firing on the next boot, and the date read here on that boot is
-    # already the later one, so the == test failed and the toast never came.
+    # already the later one, so the == test failed and the reminder never came.
     # Anything before remind_day has not opened yet, anything after the task's
     # own day is a task long past that is not worth re-arming.
     if [[ "$today" < "$remind_day" || "$day" < "$today" ]]; then
@@ -395,7 +455,7 @@ notify_due() {
 
     # Not before the hour it is due. On the task's own day the timer fires
     # every hour, so without this a deadline at 17:00 would start nagging at
-    # 00:00 — seventeen toasts of "due at 17:00" before a single one of them
+    # 00:00 — seventeen nudges of "due at 17:00" before a single one of them
     # could be acted on, which is noise wearing the costume of a reminder. The
     # day-of nag waits for the hour to come. Days earlier in the window keep
     # the whole day, because being told in advance is the entire point of
@@ -418,18 +478,25 @@ notify_due() {
 
     [[ -n "$text" ]] || text="Task"
 
-    # A headline that begins with a dash would be read as an option by
-    # omarchy-notification-send's own parser. A leading space is invisible in
-    # the toast and keeps a task called "-p" from swallowing the notification.
-    case "$text" in -*) text=" $text" ;; esac
-
-    # The sound follows a notification that actually went out, and only that
-    # one: a toast that failed to post has not interrupted anybody, and an
-    # alert on its own would be a clock ringing for nothing.
-    if send_toast "$text" "$body"; then
-      play_alert
-    fi
+    queue_texts+=("$text")
+    queue_bodies+=("$body")
   done <<<"$rows"
+
+  # Nothing due is a successful hour, not a failed one: the store was read,
+  # the date was right, and there was simply nobody to remind. A write that
+  # fails is swallowed for the same reason a missing jq is — the timer runs
+  # while nobody is watching, and a red unit says less than the widget's own
+  # "queue not shown" log will say to the session when it comes back. The
+  # alert follows a batch that actually landed, and only that one: a reminder
+  # the widget was never given has not interrupted anybody, and an alert on
+  # its own would be a clock ringing for nothing. One sound per run rather
+  # than one per task — the batch is the interruption, and three tasks due at
+  # once are still a single moment to look up from.
+  ((${#queue_texts[@]})) || return 0
+  if queue_batch; then
+    play_alert
+  fi
+  return 0
 }
 
 main() {
