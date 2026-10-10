@@ -142,19 +142,32 @@ test("cleanTime refuses rather than clamps, because a deadline silently moved is
   assert.equal(Tasks.cleanTime("17000"), "")
 })
 
-test("cleanRemindDays accepts 0..5 and clamps above", () => {
+test("cleanRemindDays accepts 0..365 and clamps above", () => {
   assert.equal(Tasks.cleanRemindDays(0), 0)
   assert.equal(Tasks.cleanRemindDays(5), 5)
+  assert.equal(Tasks.cleanRemindDays(7), 7)
+  // Past the chips is the field's own territory: twelve days is a value a
+  // person typed, and the cleaner must not pull it back onto a chip.
+  assert.equal(Tasks.cleanRemindDays(12), 12)
   assert.equal(Tasks.cleanRemindDays("3"), 3)
-  // Above the maximum the value is pulled to the maximum rather than dropped:
-  // a hand-edited 9 means "as far ahead as this goes", not "no reminder".
-  assert.equal(Tasks.cleanRemindDays(6), 5)
-  assert.equal(Tasks.cleanRemindDays(9), Tasks.MAX_REMIND_DAYS)
+  // Above the year the value is pulled to the year rather than dropped: a
+  // hand-edited 400 means "as far ahead as this goes", not "no reminder".
+  assert.equal(Tasks.cleanRemindDays(400), Tasks.MAX_REMIND_DAYS)
+  assert.equal(Tasks.cleanRemindDays(Tasks.MAX_REMIND_DAYS), Tasks.MAX_REMIND_DAYS)
   // Negative, non-numeric and absent all mean no reminder at all.
   assert.equal(Tasks.cleanRemindDays(-1), null)
   assert.equal(Tasks.cleanRemindDays(null), null)
   assert.equal(Tasks.cleanRemindDays(""), null)
   assert.equal(Tasks.cleanRemindDays("x"), null)
+})
+
+test("the chips are the days both halves offer, and each survives the cleaner", () => {
+  // One list, two faces: the composer and the row editor draw from it, so
+  // "the reminder options" cannot mean two different sets on one panel.
+  assert.deepEqual(Tasks.REMIND_CHIP_DAYS, [0, 1, 2, 3, 4, 5, 6, 7])
+  for (const days of Tasks.REMIND_CHIP_DAYS) {
+    assert.equal(Tasks.cleanRemindDays(days), days, "chip " + days)
+  }
 })
 
 test("v1 stores fold a remind of 0 to null, v2 keeps it", () => {
@@ -417,6 +430,37 @@ test("pendingGroups survives a store with nothing sensible in it", () => {
   assert.deepEqual(Tasks.pendingGroups({ days: { "2026-10-08": "not a list" } }), [])
 })
 
+test("doneGroups tags every finished task with the day it came from", () => {
+  const store = { version: 2, days: {
+    "2026-10-08": [task({ id: "a", done: true })],
+    "2026-10-13": [task({ id: "b", done: true })]
+  } }
+  const groups = Tasks.doneGroups(store)
+  assert.equal(groups.length, 2)
+  for (const g of groups) for (const t of g.tasks) assert.equal(t.dayKey, g.dayKey)
+})
+
+test("doneGroups keeps only finished tasks, newest day first", () => {
+  const store = { version: 2, days: {
+    "2026-10-08": [
+      task({ id: "open", done: false }),
+      task({ id: "first", done: true }),
+      task({ id: "second", done: true })
+    ],
+    "2026-10-13": [task({ id: "later", done: true })]
+  } }
+  const groups = Tasks.doneGroups(store)
+  assert.deepEqual(groups.map(g => g.dayKey), ["2026-10-13", "2026-10-08"])
+  assert.deepEqual(groups.flatMap(g => g.tasks.map(t => t.id)), ["later", "first", "second"])
+})
+
+test("doneGroups survives a store with nothing sensible in it", () => {
+  assert.deepEqual(Tasks.doneGroups({}), [])
+  assert.deepEqual(Tasks.doneGroups(null), [])
+  assert.deepEqual(Tasks.doneGroups({ days: { "not-a-day": [task({ done: true })] } }), [])
+  assert.deepEqual(Tasks.doneGroups({ days: { "2026-10-08": [task({ done: false })] } }), [])
+})
+
 test("dotFlags reports outstanding-ness and stays capped", () => {
   const store = storeWith([task({ id: "a" }), task({ id: "b", done: true }), task({ id: "c" })])
   assert.deepEqual(Tasks.dotFlags(store, "2026-10-08"), [true, false, true])
@@ -448,6 +492,7 @@ test("reminderDayKey walks backwards by the right number of days", () => {
   assert.equal(Tasks.reminderDayKey("2026-10-08", 0), "2026-10-08")
   assert.equal(Tasks.reminderDayKey("2026-10-08", 1), "2026-10-07")
   assert.equal(Tasks.reminderDayKey("2026-10-08", 5), "2026-10-03")
+  assert.equal(Tasks.reminderDayKey("2026-10-08", 7), "2026-10-01")
 })
 
 test("reminderDayKey crosses month, year and leap boundaries", () => {
@@ -463,18 +508,26 @@ test("reminderDayKey refuses what it cannot read", () => {
   assert.equal(Tasks.reminderDayKey("2026-10-08", null), "")
   assert.equal(Tasks.reminderDayKey("2026-10-08", "x"), "")
   assert.equal(Tasks.reminderDayKey("2026-10-08", -1), "")
-  // Past the maximum it clamps to the maximum rather than refusing, so a
-  // hand-edited 9 still points at a real day instead of at nothing.
-  assert.equal(Tasks.reminderDayKey("2026-10-08", 9), "2026-10-03")
+  // Past a year it clamps to the year rather than refusing, so a hand-edited
+  // 400 still points at a real day instead of at nothing.
+  assert.equal(Tasks.reminderDayKey("2026-10-08", 400), "2025-10-08")
+  // Past the chips but under the ceiling is a value the field could have
+  // typed, and it walks the same distance as any other.
+  assert.equal(Tasks.reminderDayKey("2026-10-08", 9), "2026-09-29")
+  assert.equal(Tasks.reminderDayKey("2026-10-08", 7), "2026-10-01")
+  assert.equal(Tasks.reminderDayKey("2026-10-08", 365), "2025-10-08")
 })
 
 test("remindDaysLabel and remindDaysShort say the same thing in English", () => {
   assert.equal(Tasks.remindDaysLabel(0), "on the due date")
   assert.equal(Tasks.remindDaysLabel(1), "the day before")
   assert.equal(Tasks.remindDaysLabel(3), "3 days before")
+  assert.equal(Tasks.remindDaysLabel(7), "7 days before")
+  assert.equal(Tasks.remindDaysLabel(12), "12 days before")
   assert.equal(Tasks.remindDaysLabel(null), "")
   assert.equal(Tasks.remindDaysShort(0), "today")
   assert.equal(Tasks.remindDaysShort(1), "1d")
+  assert.equal(Tasks.remindDaysShort(12), "12d")
   assert.equal(Tasks.remindDaysShort(null), "")
 })
 

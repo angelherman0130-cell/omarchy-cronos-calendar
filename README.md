@@ -70,12 +70,17 @@ rm -f ~/.local/state/omarchy/clock-tasks.json \
   its day, with a countdown (`2d 3h`, `45m`) on each deadline. Click a group
   heading to narrow to that day, click a day to widen back out.
 - **Deadline and reminder per task.** A due time (`17:00`, nudged with `−`/`+`)
-  and a reminder for the due day or 1–5 days before. Reminders survive a
-  reboot, arrive on the hour, and a missed one fires when the machine returns.
-  The card is drawn by the widget itself, so the title never travels through
-  the desktop's notification stack.
+  and a reminder that starts on the due day or up to seven days before — chips
+  for the week, and a field beside them for any number of days up to a year.
+  Reminders survive a reboot, fire every hour of the day through the whole
+  reminder window, and a missed one fires when the machine returns. The card
+  is drawn by the widget itself, so the title never travels through the
+  desktop's notification stack.
 - **Priority and tags.** Four priorities (`▲ ● ○`), tags typed as `#tag` —
   clicking a chip filters the list. Search by name, description or tag.
+- **Finished work on demand.** A `DONE` toggle at the foot of the list opens
+  the completed tasks — grouped by day, most recent first in the wider view,
+  just that day's in a day's. Each heading jumps to its day.
 - **Statistics.** A collapsed `STATS` block: streak, today, the last seven
   days, and how the pending work falls across the three priorities.
 - **Undo.** Deleting reports itself with a toast — *Task deleted · Undo* —

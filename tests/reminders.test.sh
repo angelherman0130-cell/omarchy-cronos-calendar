@@ -17,8 +17,9 @@
 #   * the window. A reminder used to fire only on its exact remind day, so a
 #     machine that was switched off that day lost it, and a task with
 #     remindDaysBefore > 0 never nagged on its own due day at all.
-#   * the due-time gate. On the task's own day the timer fires hourly, so a
-#     17:00 deadline began nagging at midnight.
+#   * the whole-day rule. Every hour of every day in the window counts,
+#     deadline hour or not: a reminder set "3 days before" speaks for the 3
+#     days before and the due day alike, 24 hours each.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -175,18 +176,21 @@ scenario "silent after the task's day has passed" 2026-10-11 12:00 "$window_stor
 scenario "the task's own due day is in the window" 2026-10-10 18:00 "$window_store" 1
 scenario "days in between still nag"              2026-10-06 01:00 "$window_store" 1
 
-# ---- the due-time gate on the task's own day ------------------------------
-scenario "own day, 09:00, due 17:00 -> silent"    2026-10-10 09:00 "$window_store" 0
-scenario "own day, 16:59, due 17:00 -> silent"    2026-10-10 16:59 "$window_store" 0
+# ---- every hour of every day in the window --------------------------------
+# The whole point of asking for "3 days before": no hour of those four days
+# is quieter than the others, whether or not the deadline hour has come.
+scenario "own day, 00:00, due 17:00 -> fires"     2026-10-10 00:00 "$window_store" 1
+scenario "own day, 09:00, due 17:00 -> fires"     2026-10-10 09:00 "$window_store" 1
+scenario "own day, 16:59, due 17:00 -> fires"     2026-10-10 16:59 "$window_store" 1
 scenario "own day, 17:00, due 17:00 -> fires"     2026-10-10 17:00 "$window_store" 1
 scenario "own day, 23:30, due 17:00 -> fires"     2026-10-10 23:30 "$window_store" 1
-# The gate must not reach back into the days before, or the advance reminder
-# would be silent at exactly the hour it exists to give.
+# And the days before are no different: the advance hour is not a special one.
+scenario "earlier day, 00:00, due 17:00 -> fires" 2026-10-05 00:00 "$window_store" 1
 scenario "earlier day, 01:00, due 17:00 -> fires" 2026-10-06 01:00 "$window_store" 1
 
 # ---- remind 0, the day of the task itself --------------------------------
 day_store="$(mkstore 2 "\"2026-10-10\":[{\"id\":\"t1\",\"text\":\"Ship it\",\"done\":false,\"dueTime\":\"17:00\",\"remindDaysBefore\":0}]")"
-scenario "remind 0, own day 08:00 -> silent"      2026-10-10 08:00 "$day_store" 0
+scenario "remind 0, own day 08:00 -> fires"       2026-10-10 08:00 "$day_store" 1
 scenario "remind 0, own day 17:00 -> fires"       2026-10-10 17:00 "$day_store" 1
 scenario "remind 0, day before -> silent"         2026-10-09 12:00 "$day_store" 0
 

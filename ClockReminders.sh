@@ -368,7 +368,7 @@ queue_batch() {
 
 notify_due() {
   local store="${1:-$DEFAULT_STORE}"
-  local today rows day id text due remind remind_day now_hm body label
+  local today rows day id text due remind remind_day body label
   local -a queue_texts=() queue_bodies=()
 
   [[ -r "$store" ]] || return 0
@@ -453,19 +453,13 @@ notify_due() {
       continue
     fi
 
-    # Not before the hour it is due. On the task's own day the timer fires
-    # every hour, so without this a deadline at 17:00 would start nagging at
-    # 00:00 — seventeen nudges of "due at 17:00" before a single one of them
-    # could be acted on, which is noise wearing the costume of a reminder. The
-    # day-of nag waits for the hour to come. Days earlier in the window keep
-    # the whole day, because being told in advance is the entire point of
-    # asking for a two-day reminder.
-    if [[ "$today" == "$day" && "$due" =~ ^[0-9]{2}:[0-9]{2}$ ]]; then
-      now_hm="$(date +%H:%M)"
-      if [[ "$now_hm" < "$due" ]]; then
-        continue
-      fi
-    fi
+    # Every hour of every day in the window, deadline hour or not. This used
+    # to hold the task's own day back until its due time, so a 17:00 deadline
+    # stayed silent until 17:00; that hold-back was asked to be removed — a
+    # reminder set "3 days before" is a request for the whole stretch, 24
+    # hours a day over the 3 days before and the due day alike. The card says
+    # which hour it is due, so an early nudge carries the fact rather than
+    # being noise about it.
 
     body=""
     if [[ -n "$due" ]]; then

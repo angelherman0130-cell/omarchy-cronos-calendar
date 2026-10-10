@@ -269,14 +269,15 @@ Item {
 
   // The row is a quiet surface of its own so the list reads as a set of rows
   // rather than as loose text on the panel, and so the hover has something to
-  // light up. The fill is very light because it sits under text that has to stay
-  // readable, not a card competing with it.
+  // light up. At rest it is transparent — a faint card under every row was a
+  // stack of boxes competing with the text; hover is when the surface earns
+  // its fill.
   Rectangle {
     anchors.fill: parent
     radius: Style.cornerRadius
     color: rowMouse.containsMouse
       ? Style.hoverFillFor(row.contentForeground, Color.accent)
-      : Qt.alpha(row.contentForeground, 0.035)
+      : "transparent"
   }
 
   // A hairline on the leading edge of a task still owed. The badge already says
@@ -560,6 +561,16 @@ Item {
     // needed, and the buttons do not jump when the editor opens.
     anchors.verticalCenter: label.verticalCenter
     spacing: Style.spacing.xxs
+    // Quiet at rest: two glyphs on every row is furniture the list does not
+    // need while reading. They light up with the row's own hover, and stay
+    // while editing. `enabled` rides along so a faded button cannot be
+    // pressed by a click that lands where the glyph used to be.
+    enabled: rowMouse.containsMouse || row.editing
+    opacity: enabled ? 1 : 0
+
+    Behavior on opacity {
+      NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+    }
 
     // Editing is behind a button rather than behind a click on the name, because
   // clicking the row is already spoken for: it ticks the task off, and a click
@@ -677,6 +688,13 @@ Item {
       // saved as — otherwise the task would have a reminder no chip on screen
       // claims, and pressing Save would move it without saying so.
       editBody.remindDraft = Tasks.cleanRemindDays(row.task.remindDaysBefore)
+      // The field shows what no chip names, so a reminder set to twelve days
+      // is visible as twelve rather than as nothing selected. A chip day
+      // leaves it empty: the chip already says it, and a number in the field
+      // beside a lit chip is two answers to one question.
+      editRemindCustom.text = editBody.remindDraft !== null && Tasks.REMIND_CHIP_DAYS.indexOf(editBody.remindDraft) === -1
+        ? String(editBody.remindDraft)
+        : ""
       editBody.priorityDraft = Tasks.cleanPriority(row.task.priority)
       editBody.tagsDraft = Tasks.cleanTags(row.task.tags)
     }
@@ -716,6 +734,21 @@ Item {
     // say "no reminder" without hunting for a separate control that means it.
     function toggleRemindDraft(days) {
       editBody.remindDraft = editBody.remindDraft === days ? null : days
+      // The chips and the field beside them are one control wearing two
+      // faces: a number left in the field after a chip has taken over would
+      // be a second answer to what the summary line has already said.
+      editRemindCustom.text = ""
+    }
+
+    // The field's own way in, for the days no chip names. It only ever sets —
+    // turning a reminder off is what the chip you already have is for — and
+    // unreadable input is left alone, so a half-typed "1" never becomes
+    // "no reminder" on the way to twelve.
+    function setRemindDraft(raw) {
+      var days = Tasks.cleanRemindDays(String(raw || "").replace(/^\s+|\s+$/g, ""))
+      if (days === null) return
+      editBody.remindDraft = days
+      editRemindCustom.text = String(days)
     }
 
     TextField {
@@ -820,14 +853,20 @@ Item {
     }
 
     // The reminder, as the composer words it: chips rather than a dropdown,
-    // because there are six of them and they all fit, and a chip you can see is
-    // a chip you can change your mind about without opening anything.
-    Row {
+    // because there are eight of them and a field for the rest, and they all
+    // fit once the run is allowed to wrap. A chip you can see is a chip you
+    // can change your mind about without opening anything.
+    Flow {
       id: editChips
       anchors.left: editName.left
       anchors.top: editMeta.bottom
       anchors.topMargin: Style.spacing.sm
       spacing: Style.spacing.xs
+      // Four to a row, then the field under them. The width is the grid's
+      // own — four chips plus the gaps between them — so the second row of
+      // four and the field below it all start on the same left edge.
+      width: (editChipProbe.implicitWidth + Style.spacing.md * 2) * 4
+        + Style.spacing.xs * 3
 
       // Measured, not guessed: the chips all take this width so they read as a
       // segmented control rather than as a ragged line of pills, and it has to
@@ -845,14 +884,17 @@ Item {
       }
 
       Repeater {
-        model: [0, 1, 2, 3, 4, 5]
+        model: Tasks.REMIND_CHIP_DAYS
 
         delegate: Rectangle {
           required property int modelData
 
           readonly property bool on_: editBody.remindDraft === modelData
 
-          width: editChipProbe.implicitWidth + Style.spacing.lg * 2
+          // As wide as the label needs and no wider — the same size the
+          // composer draws — so the two faces of this control match, and the
+          // Flow above is exactly four of them plus the gaps.
+          width: editChipProbe.implicitWidth + Style.spacing.md * 2
           height: editChipText.implicitHeight + Style.spacing.sm * 2
           radius: Style.cornerRadius
           // Inverted rather than coloured, and the reason is the same one the
@@ -892,6 +934,27 @@ Item {
             fontFamily: row.contentFontFamily
           }
         }
+      }
+
+      // Any number the chips do not name — three weeks out, a month, the 45
+      // days a form asks for. Same one-control-two-faces rule as the
+      // composer: it only ever sets, and the chip you already have is how a
+      // reminder is turned off.
+      TextField {
+        id: editRemindCustom
+        width: Style.space(92)
+        placeholderText: "Any days"
+        verticalPadding: Style.spacing.xs
+        foreground: row.contentForeground
+        accent: Color.accent
+        font.family: row.contentFontFamily
+        font.pixelSize: Style.font.bodySmall
+        selectByMouse: true
+        validator: IntValidator {
+          bottom: 0
+          top: Tasks.MAX_REMIND_DAYS
+        }
+        onAccepted: editBody.setRemindDraft(text)
       }
     }
 

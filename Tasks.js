@@ -13,7 +13,21 @@
 var MAX_TEXT_LENGTH = 200
 var MAX_NOTE_LENGTH = 600
 var DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-var MAX_REMIND_DAYS = 5
+
+// The chips offer the seven days everybody asks for; the field beside them
+// takes any number up to a year, because a reminder for a deadline three
+// weeks out is ordinary and one for a birthday in eight months is not a
+// reminder at all but a diary entry — and ClockReminders.sh would happily
+// wake every hour for it. The ceiling is the line between the two, and it
+// also keeps a hand-edited file from asking the shell for a date arithmetic
+// nobody meant.
+var MAX_REMIND_DAYS = 365
+
+// The days the chips spell out, in the order they are drawn. One list for
+// both halves of the panel — the composer and the row editor — so a day
+// added to one and not the other cannot happen: they would be two controls
+// offering different answers to the same question.
+var REMIND_CHIP_DAYS = [0, 1, 2, 3, 4, 5, 6, 7]
 
 // Bumped to 2 when `remindDaysBefore` stopped using 0 for "off" and started
 // using it for "the due day itself". See migrateRemindDays for what that
@@ -605,6 +619,53 @@ function pendingGroupSummary(store) {
   return { groups: groups.length, tasks: tasks }
 }
 
+// Every finished task in the store, across every day, grouped by the day it
+// belongs to and ordered newest day first — the receipts, read from the
+// bottom of the calendar up, so what was finished most recently is what the
+// eye finds first. Same `dayKey` tagging as pendingGroups: a task read out of
+// the day map does not otherwise know which day it came from, and without
+// that a row cannot be ticked off or thrown away.
+//
+// Within a day, stored order is kept. The day itself is compared as a string,
+// which for fixed-width day keys is comparing it as a date — the same trick
+// pendingGroups relies on, turned around to run backwards.
+function doneGroups(store) {
+  var days = store && store.days ? store.days : {}
+  var groups = []
+  var index = {}
+
+  for (var key in days) {
+    if (!Object.prototype.hasOwnProperty.call(days, key)) continue
+    if (!isDayKey(key)) continue
+
+    var list = days[key]
+    if (!Array.isArray(list)) continue
+
+    for (var i = 0; i < list.length; i++) {
+      var task = list[i]
+      if (!task || task.done !== true) continue
+
+      var group = index[key]
+      if (!group) {
+        group = { dayKey: String(key), tasks: [] }
+        index[key] = group
+        groups.push(group)
+      }
+
+      var tagged = copy(task)
+      tagged.dayKey = String(key)
+      group.tasks.push(tagged)
+    }
+  }
+
+  groups.sort(function(a, b) {
+    if (a.dayKey !== b.dayKey) return a.dayKey > b.dayKey ? -1 : 1
+    return 0
+  })
+
+  return groups
+}
+
 // One flag per task for the dots under a day number: true for still
 // outstanding, false for finished, in stored order. Capped, because a row of
 // dots has to stay inside its own cell and a busy day would otherwise widen
@@ -1153,6 +1214,7 @@ if (typeof module !== "undefined") {
     MAX_TEXT_LENGTH: MAX_TEXT_LENGTH,
     MAX_NOTE_LENGTH: MAX_NOTE_LENGTH,
     MAX_REMIND_DAYS: MAX_REMIND_DAYS,
+    REMIND_CHIP_DAYS: REMIND_CHIP_DAYS,
     empty: empty,
     isDayKey: isDayKey,
     cleanText: cleanText,
@@ -1179,6 +1241,7 @@ if (typeof module !== "undefined") {
     doneFor: doneFor,
     pendingGroups: pendingGroups,
     pendingGroupSummary: pendingGroupSummary,
+    doneGroups: doneGroups,
     dotFlags: dotFlags,
     pendingCount: pendingCount,
     doneCount: doneCount,

@@ -9,23 +9,37 @@ and this plugin adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
-Six things the list could not say about itself, and one it could not do.
-
+- **A `DONE` toggle for the finished work.** Closed by default at the foot of
+  the list — a receipts list always open is a second list competing with what
+  is still owed — and carrying its count, so the section still answers "how
+  much did I get through" without being opened. One press opens it; the wider
+  view gathers every finished task in the store, grouped by day and ordered
+  most recent first, the same shape the pending list above has so a heading
+  means the same thing in both halves, and each heading jumps to its day. A
+  single day's view shows just that day's, without a heading, because the
+  button already names what they are. `Tasks.doneGroups` owns the walk, the
+  tagging and the ordering; the button appears only when a search or tag
+  filter leaves something to show, so it never opens onto nothing.
+- **Reminder chips for the week, and a field for the rest.** The composer and
+  the row editor take the reminder as chips `Today`–`7` plus an "Any days"
+  field that accepts anything up to a year out, so three weeks or a 45-day
+  window is one typed number instead of a control that does not exist. The
+  summary line says it back in words — "Starts Fri 11 Sep" — and is drawn only
+  once there is a value to describe. `Tasks.MAX_REMIND_DAYS` and
+  `Tasks.REMIND_CHIP_DAYS` keep the row, the editor's chips and the tooltip
+  from drifting apart on the numbers.
 - **A countdown where the deadline is.** A pending task's badge shows how long
   is left — `2d 3h`, `45m`, `1h 5m` — instead of only the hour it is due. The
   hour is kept for the state where it is the useful half: once the time has
   passed the badge reverts to `17:00`, because a countdown of zero is the one
   countdown that has stopped. It is computed from the same clock the overdue
   colour uses, so the two can never disagree about whether the hour has come.
-- **Search.** A field at the foot of the list, narrowing it by name, description
-  or tag as you type. No mode, no confirm: looking for one task is not a
-  different place to be, and a search box behind a button is a search nobody
-  uses. It reads the whole list the header counts, so a list emptied by a
-  search says "No task matches" and names the needle rather than claiming the
-  store is empty — two different absences, and only one of them is a problem.
-  It sits under the list rather than over it: the tasks are what the panel is
-  for, and a field above them spent the first row on a box you only reach for
-  once you already know what you are looking for.
+- **Search.** A field narrowing the list by name, description or tag as you
+  type. No mode, no confirm: looking for one task is not a different place to
+  be, and a search box behind a button is a search nobody uses. It reads the
+  whole list the header counts, so a list emptied by a search says "No task
+  matches" and names the needle rather than claiming the store is empty — two
+  different absences, and only one of them is a problem.
 - **Priority.** High, medium, low, or none. The mark is `▲`, `●`, `○` beside the
   name: plain characters rather than an icon font's glyphs, so a priority reads
   the same on a machine that never installed that font. Pressing it walks to the
@@ -35,14 +49,14 @@ Six things the list could not say about itself, and one it could not do.
   until it had been set — a mark that appears after the fact is a control nobody
   can find. Every row now reserves the column and shows a faint `○` when nothing
   is set. The editor keeps the four as chips for anyone who wants to see the
-  choice rather than walk it, and the composer carries a flag button that opens
+  choice rather than walk it, and the composer carries a button that opens
   the same choice as four flags — red, amber, blue, grey. Colour is allowed in
   the menu and nowhere else: a menu is read one option at a time while a list
   is read as a whole, and on the list red is already the colour of work still
   owed, so a high-priority task painted red would read as an overdue one and
   green is finished. What a priority is called, which one is next, how it is
   drawn and what colour it is all live in `Tasks.js`, so the row, the editor's
-  chips, the composer's flags and the tooltip cannot drift apart on the
+  chips, the composer's button and the tooltip cannot drift apart on the
   spelling.
 - **Tags, and a filter that follows them.** Typed as a comma separated line in
   the editor rather than picked from a menu: the set of things worth filing
@@ -61,7 +75,7 @@ Six things the list could not say about itself, and one it could not do.
   `cleanTags` now folds case when it de-duplicates while keeping the first
   spelling, so a tag stays as it was written instead of being re-cased by a
   later edit.
-- **Statistics.** A collapsed `STATS` block under the list: the streak, today's
+- **Statistics.** A collapsed `STATS` block: the streak, today's
   total, the last seven days, and how the pending work falls across the three
   priorities. Closed by default, because these are the numbers you go looking
   for and not the ones you need while writing a task down. The first three
@@ -89,9 +103,109 @@ Six things the list could not say about itself, and one it could not do.
   toast that failed to post has not interrupted anybody. It is left to finish
   in the background so a slow or hung player cannot delay or drop the
   notification it was meant to accompany.
+- **Undo for a delete.** Deleting a row reports itself with a toast at the
+  bottom of the panel — *Task deleted · Undo* — which holds for six seconds and
+  expires on its own. `Tasks.restore` puts the task back at the index
+  `Tasks.remove` took it from, so a delete and its undo together change
+  nothing; appending instead would have moved the task out from under wherever
+  the reader last saw it. The toast carries the task and its position rather
+  than its id, because immediately after the delete there is nothing left in
+  the store to look either of them up from. Only the newest delete is offered,
+  and a delete that matched nothing offers nothing, so the button never
+  promises a return it cannot make.
+- **The deadline and the reminder are editable from the row.** The editor now
+  carries a time field and the reminder chips alongside the name and
+  description, written back with the text in one Save. They had been clearable
+  from their badges and nothing else — setting 17:00 on an existing task and
+  taking its deadline away are different acts, and only one of them had a
+  control. A time that will not parse is refused with the field left focused
+  and its text selected, the same way an emptied name already was, rather than
+  being saved as "no deadline".
+- **The first test suite.** `tests/tasks.test.js` runs `Tasks.js` under plain
+  node with no framework and no dependencies — cases over the store's
+  round trip, its cleaners, every mutation, the grouping and the reminder
+  arithmetic. `tests/reminders.test.sh` covers `ClockReminders.sh` with a fake
+  `date` and a fake notifier on `PATH`, so each case runs at the day
+  and the hour it is actually about rather than at whichever one today happens
+  to be. `cleanText` and `migrateRemindDays` were exported so they could be
+  tested at all; nothing in the panel had ever needed them.
+- A wider view of the task list, and it is now the default: every outstanding
+  task in the store, grouped under the day it belongs to and ordered by how soon
+  it falls due, so the nearest deadlines are at the top. `Tasks.pendingGroups`
+  owns the walk, the tagging and the ordering; `Tasks.pendingGroupSummary`
+  counts it, so the header and the list cannot disagree.
+- A heading per group — "TODAY", "TOMORROW", "FRI 12 SEP" — carrying that group's
+  pending count. Clicking it narrows the list to that day. The heading is a
+  button because a date you can read but not press is a caption.
+- `ALL PENDING` as the list header in the wider view, with the total
+  alongside it: "8 PENDING · 4 DAYS". When a day is showing instead, the
+  header names the day and is itself the way back out of it.
+- A deadline summary under the field, phrased against the day the calendar is
+  showing: "Due Fri 12 Sep at 17:00", or "Due today at 17:00",
+  or "Due tomorrow at 09:00". "No deadline" when there is none, and "Unreadable
+  time" — in the pending red — for one that will not parse.
+- **An edit button on every row.** It opens that row's name and description as
+  editable fields in place, with `󰄬` to save and `󰅖` to discard, `Enter` to
+  save and `Esc` to discard. The row grows to hold the editor, and only one row
+  is ever open: two editors would be two sets of fields sharing one keyboard
+  with nothing on screen saying which one `Esc` belongs to.
+- While a row is being edited its deadline and reminder badges are hidden and its
+  delete button is gone. A badge is the control that clears its own field, and a
+  delete button beside unsaved text is the one click that cannot be undone.
+- An emptied name is refused and the editor stays open with the name put back,
+  rather than closing on a nameless task. The same rule `add` follows.
+- **A description per task.** Optional, typed in the field under the name and
+  drawn under the name in the row, a size down and dimmer. A name says what the
+  task is; a note says what is still open about it — where the key is, who to
+  ask, what to bring. It was previously not expressible at all, so those details
+  either went unrecorded or were typed into the name, where they push out the one
+  line that gets read every time.
+- The description is drawn under the name in the row, a size down and dimmer,
+  and the row grows to hold it. The checkbox, the deadline and the reminder now
+  line up with the name rather than with the whole row, so they stay beside the
+  task instead of floating beside its note.
+- A reminder summary that resolves the chosen offset into an actual day:
+  "Starts Fri 11 Sep" for one day before, rather than a chip reading "1".
+- `−` / `+` steppers beside the deadline field, an hour at a time, wrapping
+  around midnight in both directions. Pressed on an empty field they start from
+  the next half hour for a task due today, and from 09:00 for any other day,
+  so a task due this evening never starts out already overdue. `Tasks.shiftTime`
+  and `Tasks.clockOffset` own that arithmetic, so there is one answer to "what is
+  an hour" instead of two.
 
 ### Changed
 
+- **The panel was compacted, and the month grid became tiles.** The hero date
+  dropped from 52 to 30 px (icon 48 to 26), the vertical rhythm tightened
+  (cells 34 to 30, rails and cards slimmer), and the small controls — the
+  week/month toggle, the priority and tag buttons, the reminder chips, the
+  steppers, the filter and stat chips — lost their borders: a faint fill, a
+  hover state and an inverted selection say the same thing with one less line
+  on each. Task rows are transparent at rest and light up on hover, and the
+  edit and delete glyphs ride along with that hover instead of standing on
+  every row. The deadline/reminder card lost its border and padding, and its
+  empty "No deadline"/"No reminder" summaries are gone until there is
+  something to say. Net effect: about a hundred and fifty pixels of height
+  back, with nothing removed that does work.
+- **In-month days carry a faint tile.** The grid reads as a grid of squares
+  rather than as numbers floating in space; days from the neighbouring months
+  stay bare, which is what keeps the shape of the month visible. Today and the
+  selected day keep their outline and fill.
+- **The search moved to the head of the list**, under the header that counts
+  it and above the tag chips, and its placeholder is now "Search task". A
+  filter you have to scroll past the list to reach is one you stop using, and
+  narrowing the list is the first thing most readers want of it.
+- **The priority button lost its flag.** The word alone carries it — the mark
+  it cycles is already on every row, and a second copy on the button was
+  furniture.
+- **`DONE` and `STATS` are the same size and sit one under the other**, the
+  panel's two asides at the foot of the list. `STATS` wears celeste and `DONE`
+  grey, so neither spends the red that means work still owed.
+- **Reminders now fire every hour of every day in the window.** The due-day
+  gate that waited for the deadline hour is gone: a 17:00 deadline is
+  announced from 00:00 of its day, and every earlier day in the window keeps
+  its hourly nag. Asking for a reminder is asking to be told, and the hour
+  the deadline lands on is one of the hours worth telling.
 - **The composer was re-laid-out into five rows.** Name, description, a row of
   two buttons for priority and tags, the deadline and the reminder side by side,
   then the list with the search at its foot. Everything that was previously
@@ -99,10 +213,10 @@ Six things the list could not say about itself, and one it could not do.
   you are writing it, which is when you know it. The deadline and the reminder
   stopped being stacked and now share one row under one hairline, turned from
   lying down to standing up, because they are one question in two parts: *when
-  is it due, and when will I hear about it*. Inside each half the summary moved
+  is it due, and when will you hear about it*. Inside each half the summary moved
   onto its own line beneath the label — at half a card's width *Due Fri 11 Sep
   at 17:00* would have elided the hour away, and the hour is the half worth
-  reading — and the six reminder chips became a `Flow`, since half a card is
+  reading — and the reminder chips became a `Flow`, since half a card is
   two rows of three rather than one run of six.
 - **The task block now reads as three zones.** Name, description and the two
   buttons sit together as the act of writing a task; the deadline-and-reminder
@@ -149,130 +263,15 @@ Six things the list could not say about itself, and one it could not do.
 - The reminder chip row's hidden width probe moved from "Hoy" to "Today" in
   lockstep with the chip label it stands in for. Translated one without the
   other it would have kept sizing the row for a word no longer on screen.
-- **Reminders now arrive on the hour instead of twice an hour.** The timer went
+- **Reminders arrive on the hour rather than twice an hour.** The timer went
   from `OnCalendar=*:00,30:00` to `*:00:00`, so a reminder is one toast at the
   top of the hour rather than one at the half and one at the hour. A task due at
   14:20 is now announced at 15:00 and nothing between — which is the point of
   asking for it, and why the row badge and chip tooltip changed from "Reminds
   every 30 min" to "Reminds every hour" rather than being left describing a
   schedule that no longer exists.
-- `AccuracySec=1min` stayed as it was. It bounds how far past the top of the
-  hour systemd may drift, which is worth keeping at any frequency.
-
-A task can now say more than what it is, and can be corrected without being
-deleted and written again. The description sits under the name in the composer
-and under the name in the row, which is where the detail nobody can infer — the
-room, the person, the file — was missing until now. Every row also has an edit
-button that opens its own name, description, deadline and reminder in place.
-
-The composer. Both optional extras now live in one card with a label each, and
-each says its choice back in words instead of only encoding it in a control.
-
-And the list opens on everything outstanding rather than on one day. A list that
-spans several days can answer a question a single day's cannot — what is about
-to be due — and that is the question a task list exists for.
-
-### Fixed
-
-- **A reminder no longer dies with the day it was scheduled for.** The script
-  matched the reminder day exactly, so a task set to nag five days out was
-  announced on that one date and on no other — and if the machine was switched
-  off that day, never at all. `Persistent=yes` does not cover this: it replays
-  the missed *timer run*, and the run that comes back reads the later date,
-  which the exact match then rejected. The test is now a window from
-  `remindDaysBefore` days ahead to the task's own day, so a machine back after
-  a week still gets the reminder, and a task whose day has passed is left alone
-  rather than re-armed.
-- **A reminder now fires on the task's own due day at all.** The same exact
-  match meant a task with a reminder set was silent on the day it was due —
-  the one day it matters most — unless the reminder happened to be the day
-  itself. The window above closes on that day instead of skipping over it.
-- **No nagging before the deadline hour.** The timer fires hourly, so on the
-  task's own day a 17:00 deadline used to start announcing itself at 00:00 and
-  keep going every hour until someone ticked it off — seventeen toasts of
-  "due at 17:00" before a single one of them could be acted on. The day-of
-  nagging now waits for the hour to arrive. Days earlier in the window are
-  untouched, because being told in advance is the point of asking for a
-  two-day reminder.
-
-### Added
-
-- **Undo for a delete.** Deleting a row reports itself with a toast at the
-  bottom of the panel — *Task deleted · Undo* — which holds for six seconds and
-  expires on its own. `Tasks.restore` puts the task back at the index
-  `Tasks.remove` took it from, so a delete and its undo together change
-  nothing; appending instead would have moved the task out from under wherever
-  the reader last saw it. The toast carries the task and its position rather
-  than its id, because immediately after the delete there is nothing left in
-  the store to look either of them up from. Only the newest delete is offered,
-  and a delete that matched nothing offers nothing, so the button never
-  promises a return it cannot make.
-- **The deadline and the reminder are editable from the row.** The editor now
-  carries a time field and the six reminder chips alongside the name and
-  description, written back with the text in one Save. They had been clearable
-  from their badges and nothing else — setting 17:00 on an existing task and
-  taking its deadline away are different acts, and only one of them had a
-  control. A time that will not parse is refused with the field left focused
-  and its text selected, the same way an emptied name already was, rather than
-  being saved as "no deadline".
-- **The first test suite.** `tests/tasks.test.js` runs `Tasks.js` under plain
-  node with no framework and no dependencies — 50 cases over the store's
-  round trip, its cleaners, every mutation, the grouping and the reminder
-  arithmetic. `tests/reminders.test.sh` covers `ClockReminders.sh` with a fake
-  `date` and a fake notifier on `PATH`, so each of its 17 cases runs at the day
-  and the hour it is actually about rather than at whichever one today happens
-  to be. Both existed as bugs first: the window and the due-hour gate above
-  fail 6 and 1 cases respectively of the shell suite as it was before the fix.
-  `cleanText` and `migrateRemindDays` were exported so they could be tested at
-  all; nothing in the panel had ever needed them.
-
-- A wider view of the task list, and it is now the default: every outstanding
-  task in the store, grouped under the day it belongs to and ordered by how soon
-  it falls due, so the nearest deadlines are at the top. `Tasks.pendingGroups`
-  owns the walk, the tagging and the ordering; `Tasks.pendingGroupSummary`
-  counts it, so the header and the list cannot disagree.
-- A heading per group — "TODAY", "TOMORROW", "FRI 12 SEP" — carrying that group's
-  pending count. Clicking it narrows the list to that day. The heading is a
-  button because a date you can read but not press is a caption.
-- `ALL PENDING` as the list header in the wider view, with the total
-  alongside it: "8 PENDING · 4 DAYS". When a day is showing instead, the
-  header names the day and is itself the way back out of it.
-
-- A deadline summary under the field, phrased against the day the calendar is
-  showing: "Due Fri 12 Sep at 17:00", or "Due today at 17:00",
-  or "Due tomorrow at 09:00". "No deadline" when there is none, and "Unreadable
-  time" — in the pending red — for one that will not parse.
-- **An edit button on every row.** It opens that row's name and description as
-  editable fields in place, with `󰄬` to save and `󰅖` to discard, `Enter` to
-  save and `Esc` to discard. The row grows to hold the editor, and only one row
-  is ever open: two editors would be two sets of fields sharing one keyboard
-  with nothing on screen saying which one `Esc` belongs to.
-- While a row is being edited its deadline and reminder badges are hidden and its
-  delete button is gone. A badge is the control that clears its own field, and a
-  delete button beside unsaved text is the one click that cannot be undone.
-- An emptied name is refused and the editor stays open with the name put back,
-  rather than closing on a nameless task. The same rule `add` follows.
-- **A description per task.** Optional, typed in the field under the name and
-  drawn under the name in the row, a size down and dimmer. A name says what the
-  task is; a note says what is still open about it — where the key is, who to
-  ask, what to bring. It was previously not expressible at all, so those details
-  either went unrecorded or were typed into the name, where they push out the one
-  line that gets read every time.
-- The description is drawn under the name in the row, a size down and dimmer,
-  and the row grows to hold it. The checkbox, the deadline and the reminder now
-  line up with the name rather than with the whole row, so they stay beside the
-  task instead of floating beside its note.
-- A reminder summary that resolves the chosen offset into an actual day:
-  "Starts Fri 11 Sep" for one day before, rather than a chip reading "1".
-- `−` / `+` steppers beside the deadline field, an hour at a time, wrapping
-  around midnight in both directions. Pressed on an empty field they start from
-  the next half hour for a task due today, and from 09:00 for any other day,
-  so a task due this evening never starts out already overdue. `Tasks.shiftTime`
-  and `Tasks.clockOffset` own that arithmetic, so there is one answer to "what is
-  an hour" instead of two.
-
-### Changed
-
+- `AccuracySec=1min` stayed as it was. It bounds how far past the top of
+  the hour systemd may drift, which is worth keeping at any frequency.
 - **Picking a day in the grid narrows the list to it; picking the day already
   showing widens it back out.** The wider view is not a mode you can only leave
   by reloading, because the grid is the one control that is always on screen and
@@ -308,6 +307,19 @@ to be due — and that is the question a task list exists for.
 
 ### Fixed
 
+- **A reminder no longer dies with the day it was scheduled for.** The script
+  matched the reminder day exactly, so a task set to nag five days out was
+  announced on that one date and on no other — and if the machine was switched
+  off that day, never at all. `Persistent=yes` does not cover this: it replays
+  the missed *timer run*, and the run that comes back reads the later date,
+  which the exact match then rejected. The test is now a window from
+  `remindDaysBefore` days ahead to the task's own day, so a machine back after
+  a week still gets the reminder, and a task whose day has passed is left alone
+  rather than re-armed.
+- **A reminder now fires on the task's own due day at all.** The same exact
+  match meant a task with a reminder set was silent on the day it was due —
+  the one day it matters most — unless the reminder happened to be the day
+  itself. The window above closes on that day instead of skipping over it.
 - The group delegates own a `Column` of rows, so switching out of the wider view
   tore down that whole tree at once and each row's `parent.width` binding was
   re-evaluated with its parent already gone. One "Cannot read property 'width' of

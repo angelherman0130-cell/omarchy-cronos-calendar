@@ -202,6 +202,16 @@ Panel {
   readonly property var listSummary: Tasks.groupSummary(root.listGroups)
   readonly property int listPending: root.listDayPending.length
   readonly property int listDone: root.listDayDone.length
+  // The finished work the dropdown draws. The wider view gathers every
+  // finished task in the store, newest day first; the day view is that day's
+  // own, already narrowed above, wrapped as one group so one pair of
+  // Repeaters can draw both shapes.
+  readonly property var listDoneGroups: root.allDays
+    ? Tasks.filterGroups(Tasks.doneGroups(taskStore), root.searchQuery, root.tagFilter)
+    : (root.listDayDone.length > 0
+      ? [{ dayKey: root.selectedKey, tasks: root.listDayDone }]
+      : [])
+  readonly property int listDoneTotal: Tasks.groupSummary(root.listDoneGroups).tasks
 
   // Every tag still worth offering, counted over what is pending rather than
   // over what is drawn: counted over the drawn list, the chip for the tag
@@ -235,21 +245,17 @@ Panel {
   readonly property int selectedPending: selectedPendingTasks.length
   readonly property int selectedDone: selectedDoneTasks.length
 
-  // The finished block belongs to a single day. In the wider view it would sit
-  // under tasks from other days, and a list of what is outstanding with one
-  // day's worth of receipts bolted to the bottom of it is two lists pretending
-  // to be one. Clicking a day is how you go and read a day.
+  // The finished section is a dropdown in both views: closed by default,
+  // opened by one press. In the wider view it gathers every finished task in
+  // the store rather than only the selected day's, because a list that spans
+  // several days has receipts from all of them; the day view keeps showing
+  // just that day's. Counted off the filtered lists rather than the store's,
+  // so a search that hides every finished task also takes the button away
+  // instead of offering one that opens onto nothing.
   //
-  // Counted off the filtered list rather than the store's, so a search that
-  // hides every finished task also takes away the rule and heading above them
-  // instead of leaving a finished block with nothing in it.
-  readonly property bool showDoneSection: !root.allDays && root.listDone > 0
-
-  // The completed section shows a few and folds the rest away, so a long day
-  // cannot push the composer off the panel. `doneExpanded` is the user's own
-  // toggle and is deliberately never reset by an edit: adding a task should
-  // not slam the list shut under them.
-  readonly property int collapsedDoneLimit: 5
+  // `doneExpanded` is the user's own toggle and is deliberately never reset
+  // by an edit: adding a task should not slam the list shut under them.
+  readonly property bool showDoneSection: root.listDoneTotal > 0
   property bool doneExpanded: false
 
   // The stats block, closed by default. Every figure on this panel is already
@@ -483,7 +489,7 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property int cellWidth: Style.space(52)
-  readonly property int cellHeight: Style.space(34)
+  readonly property int cellHeight: Style.space(30)
   readonly property int cellSpacing: Style.space(2)
   readonly property int weekColumnWidth: Style.space(32)
   readonly property int gutterWidth: Style.space(14)
@@ -787,6 +793,7 @@ Panel {
     noteField.text = ""
     dueField.text = ""
     root.draftRemindDays = null
+    remindCustomField.text = ""
     root.draftPriority = null
     root.draftTags = []
     root.draftPopover = ""
@@ -797,6 +804,22 @@ Panel {
   // not 0, because 0 is the day-of chip.
   function toggleRemindDays(days) {
     root.draftRemindDays = root.draftRemindDays === days ? null : days
+    // The chips and the field beside them are one control wearing two faces,
+    // so a number left in the field after a chip has taken over would be a
+    // second answer to the question the line above has already answered.
+    remindCustomField.text = ""
+  }
+
+  // The field's own way in, for the days no chip names. It only ever sets —
+  // turning a reminder off is what the chip you already have is for, and a
+  // field that emptied the draft when cleared would take the reminder away by
+  // accident rather than on purpose. Unreadable input is left alone for the
+  // same reason: a half-typed "1" must not become "no reminder".
+  function setCustomRemindDays(raw) {
+    var days = Tasks.cleanRemindDays(String(raw || "").replace(/^\s+|\s+$/g, ""))
+    if (days === null) return
+    root.draftRemindDays = days
+    remindCustomField.text = String(days)
   }
 
   // A day named the way a person would name it: "today", "tomorrow", "yesterday"
@@ -1300,7 +1323,7 @@ Panel {
           // the screen allows, and a fixed seven-column grid would otherwise
           // lose its last days off the edge instead of scrolling.
           width: Math.max(calendarScroll.width, gridColumn.width)
-          spacing: Style.space(8)
+          spacing: Style.space(6)
 
           // ---- Hero: today, centered. Once the view has stepped back
           //      it is also the way home — clicking the date you are
@@ -1312,7 +1335,7 @@ Panel {
             Row {
               id: heroRow
               anchors.horizontalCenter: parent.horizontalCenter
-              spacing: Style.space(22)
+              spacing: Style.space(14)
 
               Text {
                 // Baseline-aligned, not center-aligned: "July 26" carries a
@@ -1327,7 +1350,7 @@ Panel {
                 // Decorative, and deliberately outside the Style.font.*
                 // scale. Sized so the glyph reads at the cap height of the
                 // date beside it rather than towering over it.
-                font.pixelSize: 48
+                font.pixelSize: 26
               }
 
               Text {
@@ -1339,7 +1362,7 @@ Panel {
                   ? Style.hoverStateColor(root.contentForeground, Color.accent)
                   : root.contentForeground
                 font.family: root.contentFontFamily
-                font.pixelSize: 52
+                font.pixelSize: 30
                 font.bold: true
               }
             }
@@ -1372,7 +1395,7 @@ Panel {
 
             Item {
               id: yearBlock
-              y: Style.space(6)
+              y: Style.space(2)
               anchors.horizontalCenter: parent.horizontalCenter
               width: gridColumn.width
               height: Math.max(yearLabel.implicitHeight, Style.space(10))
@@ -1466,7 +1489,7 @@ Panel {
                 anchors.leftMargin: Style.space(12)
                 anchors.rightMargin: Style.space(12)
                 anchors.verticalCenter: parent.verticalCenter
-                height: Style.space(6)
+                height: Style.space(4)
                 radius: Style.cornerRadius > 0 ? height / 2 : 0
                 color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
 
@@ -1524,7 +1547,7 @@ Panel {
                 anchors.leftMargin: Style.space(12)
                 anchors.rightMargin: Style.space(12)
                 anchors.verticalCenter: parent.verticalCenter
-                height: Style.space(6)
+                height: Style.space(4)
                 radius: Style.cornerRadius > 0 ? height / 2 : 0
                 color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
 
@@ -1577,7 +1600,7 @@ Panel {
               id: gridColumn
               // The meter above is a solid rule; the grid needs room to
               // read as its own block rather than hanging off it.
-              y: Style.space(18)
+              y: Style.space(10)
               anchors.horizontalCenter: parent.horizontalCenter
               spacing: Style.space(3)
 
@@ -1591,7 +1614,7 @@ Panel {
                 // click will switch to.
                 Rectangle {
                   width: root.weekColumnWidth
-                  height: Style.space(16)
+                  height: Style.space(14)
                   radius: Style.cornerRadius
                   color: weekStartMouse.containsMouse
                     ? Style.hoverFillFor(root.contentForeground, Color.accent)
@@ -1626,7 +1649,7 @@ Panel {
 
                 Item {
                   width: root.gutterWidth
-                  height: Style.space(16)
+                  height: Style.space(14)
                 }
 
                 Repeater {
@@ -1636,7 +1659,7 @@ Panel {
                     textFormat: Text.PlainText
                     required property var modelData
                     width: root.cellWidth
-                    height: Style.space(16)
+                    height: Style.space(14)
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     text: root.weekdayLabel(modelData)
@@ -1696,9 +1719,18 @@ Panel {
                       // over a grid this quiet. The selected day is the one
                       // exception — it is filled faintly, because the task
                       // list below needs to say which day it belongs to.
+                      //
+                      // In-month days carry a faint tile so the grid reads as
+                      // a grid of squares rather than as numbers floating in
+                      // space; days from the neighbouring months stay bare,
+                      // which is what keeps the shape of the month visible.
                       color: selected
                         ? Style.selectedFillFor(root.contentForeground, Color.accent)
-                        : (dayMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent")
+                        : dayMouse.containsMouse
+                          ? Style.hoverFillFor(root.contentForeground, Color.accent)
+                          : modelData.inMonth
+                            ? Qt.alpha(root.contentForeground, 0.05)
+                            : "transparent"
                       border.width: modelData.today || selected ? Style.spacing.hairline : 0
                       border.color: selected
                         ? Style.selectedBorderFor(root.contentForeground, Color.accent)
@@ -1713,7 +1745,7 @@ Panel {
                         textFormat: Text.PlainText
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: Style.space(13)
+                        anchors.bottomMargin: Style.space(11)
                         text: modelData.day
                         color: modelData.inMonth
                           ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
@@ -1735,7 +1767,7 @@ Panel {
                         visible: dayCell.hasTasks
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: Style.space(5)
+                        anchors.bottomMargin: Style.space(4)
                         spacing: Style.space(2)
 
                         Repeater {
@@ -1806,7 +1838,7 @@ Panel {
               anchors.horizontalCenter: parent.horizontalCenter
               anchors.horizontalCenterOffset: root.monthSlideX
               width: gridColumn.width
-              height: monthLabel.implicitHeight + viewToggle.height + Style.space(14)
+              height: monthLabel.implicitHeight + viewToggle.height + Style.space(6)
 
               // What the chevrons are stepping over. A range in the week view
               // because "OCTOBER 2026" over a single week would be a heading
@@ -1896,8 +1928,6 @@ Panel {
                       : viewChipMouse.containsMouse
                         ? Style.hoverFillFor(root.contentForeground, Color.accent)
                         : Qt.alpha(root.contentForeground, 0.07)
-                    border.width: on_ ? 0 : Style.normalBorderWidth
-                    border.color: Qt.alpha(root.contentForeground, 0.18)
 
                     Text {
                       id: viewChipText
@@ -1963,10 +1993,10 @@ Panel {
               // month on screen, so leaving it behind would show another
               // month's tasks under a grid that has already moved on.
               anchors.horizontalCenterOffset: root.monthSlideX
-              y: Style.space(14)
+              y: Style.space(8)
               anchors.horizontalCenter: parent.horizontalCenter
               width: gridColumn.width
-              spacing: Style.space(8)
+              spacing: Style.space(6)
 
               // One row definition, bound once, used by both sections below.
               // Repeater.delegate takes a Component, which is the only way to
@@ -2039,6 +2069,7 @@ Panel {
                 width: parent.width
                 placeholderText: "Add task"
                 foreground: root.contentForeground
+                verticalPadding: Style.spacing.xs
                 // The theme accent, not the pending red. `accent` here draws the
                 // focus ring, and a field the cursor happens to be in owes
                 // nobody anything; painting its focus red would spend the one
@@ -2069,6 +2100,7 @@ Panel {
                 width: parent.width
                 placeholderText: "Description (optional)"
                 foreground: root.contentForeground
+                verticalPadding: Style.spacing.xs
                 accent: Color.accent
                 font.family: root.contentFontFamily
                 // A notch below the name's own size. The name is the thing being
@@ -2103,41 +2135,27 @@ Panel {
 
                 Rectangle {
                   id: flagButton
-                  height: Style.spacing.controlHeight
-                  width: flagLabel.implicitWidth + flagGlyph.size
-                    + Style.spacing.sm + Style.spacing.md * 2
+                  height: flagLabel.implicitHeight + Style.spacing.md
+                  width: flagLabel.implicitWidth + Style.spacing.md * 2
                   radius: Style.cornerRadius
                   color: flagMouse.containsMouse
                     ? Style.hoverFillFor(root.contentForeground, Color.accent)
                     : Qt.alpha(root.contentForeground, 0.07)
-                  border.width: Style.normalBorderWidth
-                  border.color: Qt.alpha(root.contentForeground, 0.18)
 
-                  Row {
+                  Text {
+                    id: flagLabel
                     anchors.centerIn: parent
-                    spacing: Style.spacing.sm
-
-                    FlagGlyph {
-                      id: flagGlyph
-                      flagColor: Tasks.priorityColor(root.draftPriority)
-                      size: Style.space(14)
-                    }
-
-                    Text {
-                      id: flagLabel
-                      anchors.verticalCenter: parent.verticalCenter
-                      textFormat: Text.PlainText
-                      // "Priority" when there is none, and the level when there
-                      // is: the button has to say what it will do and what it
-                      // has done, and one word cannot be both.
-                      text: Tasks.priorityLabel(root.draftPriority) === ""
-                        ? "Priority"
-                        : Tasks.priorityLabel(root.draftPriority)
-                      color: root.contentForeground
-                      font.family: root.contentFontFamily
-                      font.pixelSize: Style.font.bodySmall
-                      font.bold: root.draftPriority !== null
-                    }
+                    textFormat: Text.PlainText
+                    // "Priority" when there is none, and the level when there
+                    // is: the button has to say what it will do and what it
+                    // has done, and one word cannot be both.
+                    text: Tasks.priorityLabel(root.draftPriority) === ""
+                      ? "Priority"
+                      : Tasks.priorityLabel(root.draftPriority)
+                    color: root.contentForeground
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: root.draftPriority !== null
                   }
 
                   MouseArea {
@@ -2164,7 +2182,7 @@ Panel {
 
                 Rectangle {
                   id: tagButton
-                  height: Style.spacing.controlHeight
+                  height: tagLabel.implicitHeight + Style.spacing.md
                   // Clamped to what the row has left rather than to a fixed
                   // width: a tag list is the reader's and can be any length,
                   // and a button that ran past the panel would push its own
@@ -2175,8 +2193,6 @@ Panel {
                   color: tagButtonMouse.containsMouse
                     ? Style.hoverFillFor(root.contentForeground, Color.accent)
                     : Qt.alpha(root.contentForeground, 0.07)
-                  border.width: Style.normalBorderWidth
-                  border.color: Qt.alpha(root.contentForeground, 0.18)
 
                   // Kept out of the Rectangle's layout — a Rectangle positions
                   // its children freely, so a hidden probe measures without
@@ -2255,24 +2271,22 @@ Panel {
               Rectangle {
                 id: optionCard
                 width: parent.width
-                height: optionBody.implicitHeight + Style.spacing.lg * 2
+                height: optionBody.implicitHeight + Style.spacing.md * 2
                 // A quiet surface, not a card that competes with the task it is
                 // about to create. The fill is barely there and the border does
                 // the work of separating it from the panel.
                 radius: Style.cornerRadius
                 color: Qt.alpha(root.contentForeground, 0.03)
-                border.width: Style.normalBorderWidth
-                border.color: Qt.alpha(root.contentForeground, 0.1)
 
                 Column {
                   id: optionBody
                   anchors.left: parent.left
                   anchors.right: parent.right
                   anchors.top: parent.top
-                  anchors.margins: Style.spacing.lg
-                  spacing: Style.spacing.md
+                  anchors.margins: Style.spacing.md
+                  spacing: Style.spacing.sm
 
-                  // The widest chip label, measured once so all six chips can
+                  // The widest chip label, measured once so all eight chips can
                   // share one width and read as a segmented control rather than
                   // a ragged line of differently sized pills. `visible: false`
                   // and not a zero size on purpose: implicitWidth comes from
@@ -2283,7 +2297,7 @@ Panel {
                     visible: false
                     // Must stay the widest string the chips below can render, or
                     // the row is sized for a word that is no longer there.
-                    // "Today" against "1".."5" is, in this font at bodySmall.
+                    // "Today" against "1".."7" is, in this font at bodySmall.
                     text: "Today"
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -2333,6 +2347,10 @@ Panel {
                       Text {
                         width: parent.width
                         elide: Text.ElideRight
+                        // Only when there is something to say. "No deadline" on
+                        // an empty composer is a caption about nothing, and the
+                        // label above already names the field.
+                        visible: root.dueFieldFilled
                         textFormat: Text.PlainText
                         text: root.draftDueSummary
                         color: root.draftDueSummaryColor
@@ -2399,8 +2417,6 @@ Panel {
                             color: stepMouse.containsMouse
                               ? Style.hoverFillFor(root.contentForeground, Color.accent)
                               : Qt.alpha(root.contentForeground, 0.07)
-                            border.width: Style.normalBorderWidth
-                            border.color: Qt.alpha(root.contentForeground, 0.18)
 
                             Text {
                               anchors.centerIn: parent
@@ -2460,6 +2476,9 @@ Panel {
                       Text {
                         width: parent.width
                         elide: Text.ElideRight
+                        // Same rule as the deadline's: only shown once a
+                        // reminder exists to describe.
+                        visible: root.draftRemindDays !== null
                         textFormat: Text.PlainText
                         text: root.draftRemindSummary
                         color: root.draftRemindSummaryColor
@@ -2472,14 +2491,20 @@ Panel {
                         spacing: Style.spacing.xs
 
                         Repeater {
-                          model: [0, 1, 2, 3, 4, 5]
+                          model: Tasks.REMIND_CHIP_DAYS
 
                           delegate: Rectangle {
                             required property int modelData
 
                             readonly property bool on_: root.draftRemindDays === modelData
 
-                            width: remindChipProbe.implicitWidth + Style.spacing.lg * 2
+                            // Four to a row, and each one as wide as its
+                            // label needs and no wider: the run used to
+                            // stretch to the column, which made eight little
+                            // choices look like eight panels. Fixed by the
+                            // probe instead of by a fraction, so the size
+                            // does not change when the panel does.
+                            width: remindChipProbe.implicitWidth + Style.spacing.sm * 2
                             height: chipText.implicitHeight + Style.spacing.sm * 2
                             radius: Style.cornerRadius
                             // Inverted rather than coloured, and that is the point
@@ -2493,8 +2518,6 @@ Panel {
                               : chipMouse.containsMouse
                                 ? Style.hoverFillFor(root.contentForeground, Color.accent)
                                 : Qt.alpha(root.contentForeground, 0.07)
-                            border.width: on_ ? 0 : Style.normalBorderWidth
-                            border.color: Qt.alpha(root.contentForeground, 0.18)
 
                             Text {
                               id: chipText
@@ -2523,6 +2546,31 @@ Panel {
                             }
                           }
                         }
+                      }
+
+                      // Any number the chips do not name: three weeks out, a
+                      // month, the 45 days a form asks for. Under the chips
+                      // rather than among them, because a box in a run of pills
+                      // reads as a pill you can press and this one is typed
+                      // into. It only ever sets — the chip you already have is
+                      // how a reminder is turned off, and a field that emptied
+                      // the draft when cleared would take the reminder away by
+                      // accident rather than on purpose.
+                      TextField {
+                        id: remindCustomField
+                        width: Style.space(92)
+                        placeholderText: "Any days"
+                        verticalPadding: Style.spacing.xs
+                        foreground: root.contentForeground
+                        accent: Color.accent
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.bodySmall
+                        selectByMouse: true
+                        validator: IntValidator {
+                          bottom: 0
+                          top: Tasks.MAX_REMIND_DAYS
+                        }
+                        onAccepted: root.setCustomRemindDays(text)
                       }
                     }
                   }
@@ -2635,16 +2683,40 @@ Panel {
                 }
               }
 
+              // ---- Searching, at the head of the list. It used to sit at
+              //      the foot, on the theory that tasks deserve the first
+              //      row — but a filter you have to scroll past the list to
+              //      reach is one you stop using, and narrowing the list is
+              //      the first thing most readers want of it.
+              TextField {
+                id: searchField
+                width: parent.width
+                placeholderText: "Search task"
+                foreground: root.contentForeground
+                verticalPadding: Style.spacing.xs
+                accent: Color.accent
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+                selectByMouse: true
+                // No onAccepted: a search that has to be confirmed is a search
+                // that shows you the wrong list while you finish typing.
+                onTextChanged: root.searchQuery = text
+                Keys.onEscapePressed: {
+                  text = ""
+                  keyCatcher.forceActiveFocus()
+                }
+              }
+
               // ---- The tags, as a row of chips over the list. The filter, and
               //      only that: in force when inverted, off again on a second
               //      click, with the count of what each one would show.
               //
-              //      The two ways of narrowing now sandwich the list — tags
-              //      above it, the field that narrows by name below it — and
-              //      both sit apart from the way a tag gets set, which is row
-              //      three of the composer. These chips used to double as the
-              //      way in, and a reader could not tell which of the two they
-              //      were about to hit.
+              //      The two ways of narrowing now sit together over the list —
+              //      the field by name, the chips by tag — and both sit apart
+              //      from the way a tag gets set, which is row three of the
+              //      composer. These chips used to double as the way in, and a
+              //      reader could not tell which of the two they were about to
+              //      hit.
               //
               //      A Flow rather than a Row: the set of tags is the reader's
               //      and can be any length, and a Row that ran past the panel
@@ -2677,8 +2749,6 @@ Panel {
                       : tagChipMouse.containsMouse
                         ? Style.hoverFillFor(root.contentForeground, Color.accent)
                         : Qt.alpha(root.contentForeground, 0.07)
-                    border.width: on_ ? 0 : Style.normalBorderWidth
-                    border.color: Qt.alpha(root.contentForeground, 0.18)
 
                     Text {
                       id: tagChipText
@@ -2831,28 +2901,24 @@ Panel {
                 delegate: taskRow
               }
 
-              // The completed section is capped: a day can easily end up with
-              // more of them than pending, and an uncapped list would push the
-              // composer itself off the panel. The count stays honest by
-              // showing how many are folded away.
+              // ---- Finished work, behind one press. A dropdown and only
+              //      that: a receipts list always open is a second list
+              //      competing with what is still owed, and the count on the
+              //      button answers "how much did I get through" without the
+              //      section being opened at all. The header treatment is the
+              //      same one STATS uses, so the two toggles read as the same
+              //      kind of thing.
               Item {
                 width: parent.width
-                // Measured off the last child, not summed by hand. The old
-                // expression added the heading and the two lists but skipped the
-                // hairline above the heading and the spacing.md gap between
-                // them, so it came out Style.spacing.md + hairline - spacing.sm
-                // short — 6px at the default scale. This Item is a child of
-                // taskBlock's Column, and the Column only reserves the height
-                // declared here, so the finished list rendered past the bottom
-                // of the panel's own content: clip: true sliced the last row
-                // through the middle of its name and contentHeight was short by
-                // the same amount, so there was nothing to scroll to bring it
-                // back. Taking the bottom of the last child cannot drift when a
-                // spacing token changes, because the tokens that position the
-                // children are the same ones that measure them.
-                height: root.showDoneSection
-                  ? moreDoneLabel.y + moreDoneLabel.height
-                  : 0
+                // Measured off the last child rather than summed by hand, for
+                // the reason the old block's comment gave: this Item is a
+                // child of taskBlock's Column, and a hand-summed height that
+                // drifts from the tokens that draw the children renders the
+                // list past the panel's own clip with nothing to scroll it
+                // back.
+                height: doneBody.visible
+                  ? doneBody.y + doneBody.height
+                  : doneHeaderRow.y + doneHeaderRow.height
                 visible: root.showDoneSection
 
                 // A hairline with a gap on either side, so the finished block
@@ -2866,53 +2932,37 @@ Panel {
                   color: Qt.alpha(root.contentForeground, 0.18)
                 }
 
-                Text {
-                  id: doneHeading
-                  textFormat: Text.PlainText
-                  anchors.left: parent.left
-                  anchors.right: parent.right
+                Item {
+                  id: doneHeaderRow
                   anchors.top: doneRule.bottom
                   anchors.topMargin: Style.spacing.md
-                  height: implicitHeight
-                  text: "DONE"
-                  color: Qt.alpha(root.doneTaskColor, 0.85)
-                  font.family: root.contentFontFamily
-                  font.pixelSize: Style.font.caption
-                  font.letterSpacing: 1.5
-                  font.bold: true
-                }
-
-                Column {
-                  id: doneList
                   width: parent.width
-                  spacing: Style.spacing.xxs
-                  y: doneHeading.y + doneHeading.height + Style.spacing.xs
+                  height: Math.max(doneHeader.implicitHeight, Style.space(10))
 
-                  Repeater {
-                    model: root.doneExpanded
-                      ? root.listDayDone
-                      : root.listDayDone.slice(0, root.collapsedDoneLimit)
-                    delegate: taskRow
+                  Text {
+                    id: doneHeader
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: "DONE  " + root.listDoneTotal
+                      + (root.doneExpanded ? "  ▾" : "  ▸")
+                    color: Qt.darker(root.contentForeground, 1.7)
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.letterSpacing: 1.5
+                    font.bold: true
                   }
-                }
 
-                Text {
-                  id: moreDoneLabel
-                  textFormat: Text.PlainText
-                  width: parent.width
-                  y: doneList.y + doneList.height
-                  height: visible ? implicitHeight : 0
-                  // Counted off the filtered list for the same reason the rows
-                  // are drawn from it: a "Show 3 more" that would reveal three
-                  // rows the search has already hidden is a button that lies.
-                  visible: root.listDone > root.collapsedDoneLimit
-                  text: root.doneExpanded
-                    ? "Show less"
-                    : "Show " + (root.listDone - root.collapsedDoneLimit) + " more"
-                  color: Qt.darker(root.contentForeground, 1.6)
-                  font.family: root.contentFontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
+                  Text {
+                    id: doneHint
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: root.doneExpanded ? "Hide" : "Show"
+                    color: Qt.alpha(root.contentForeground, 0.5)
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.caption
+                  }
 
                   MouseArea {
                     anchors.fill: parent
@@ -2920,33 +2970,79 @@ Panel {
                     onClicked: root.doneExpanded = !root.doneExpanded
                   }
                 }
-              }
 
-              // ---- Searching. Its own field rather than a mode, because
-              //      looking for one task is not a different place to be — the
-              //      list is the same list, narrowed. At the foot of it rather
-              //      than over its head: the tasks are what this panel is for,
-              //      and a field above them spent the first row on a box you
-              //      only reach for when you already know what you want. It is
-              //      always there — a search box behind a button is a search
-              //      nobody uses.
-              TextField {
-                id: searchField
-                width: parent.width
-                placeholderText: "Search name, description or #tag"
-                foreground: root.contentForeground
-                accent: Color.accent
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.bodySmall
-                selectByMouse: true
-                // No onAccepted: a search that has to be confirmed is a search
-                // that shows you the wrong list while you finish typing.
-                onTextChanged: root.searchQuery = text
-                Keys.onEscapePressed: {
-                  text = ""
-                  keyCatcher.forceActiveFocus()
+                Column {
+                  id: doneBody
+                  anchors.top: doneHeaderRow.bottom
+                  anchors.topMargin: Style.spacing.xs
+                  width: parent.width
+                  spacing: Style.spacing.xs
+                  visible: root.doneExpanded
+
+                  // The wider view groups by day, newest first — the same
+                  // shape the pending list above has, so a heading means the
+                  // same thing in both halves of the panel. The wrapper takes
+                  // the model role the Repeater injects, exactly as the
+                  // pending groups' delegate does.
+                  Repeater {
+                    model: root.allDays ? root.listDoneGroups : []
+
+                    delegate: Item {
+                      required property var modelData
+
+                      // Guarded for the same reason the pending delegates are:
+                      // this tree is destroyed with rows still bound to it.
+                      width: parent ? parent.width : 0
+                      height: doneGroupList.y + doneGroupList.height
+
+                      Text {
+                        id: doneGroupLabel
+                        textFormat: Text.PlainText
+                        width: parent.width
+                        height: implicitHeight
+                        // Named by the same phrase the composer uses, so a day
+                        // reads the same everywhere it appears.
+                        text: root.groupHeading(modelData.dayKey)
+                          + " · " + modelData.tasks.length + " DONE"
+                        color: Qt.alpha(root.contentForeground, 0.45)
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.caption
+                        font.letterSpacing: 1.5
+                        font.bold: true
+                        elide: Text.ElideRight
+
+                        MouseArea {
+                          anchors.fill: parent
+                          anchors.margins: -Style.space(2)
+                          hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor
+                          onClicked: root.jumpToDay(modelData.dayKey)
+                        }
+                      }
+
+                      Column {
+                        id: doneGroupList
+                        width: parent ? parent.width : 0
+                        spacing: Style.spacing.xxs
+                        y: doneGroupLabel.height + Style.spacing.xs
+
+                        Repeater {
+                          model: modelData.tasks
+                          delegate: taskRow
+                        }
+                      }
+                    }
+                  }
+
+                  // A single day's own receipts, without a heading: the
+                  // button above already names what these are.
+                  Repeater {
+                    model: root.allDays ? [] : root.listDayDone
+                    delegate: taskRow
+                  }
                 }
               }
+
               // ---- Statistics, under the list rather than over it. Closed by
               //      default and opened by one word, because these numbers are
               //      the ones you go looking for — a streak is not something you
@@ -2969,7 +3065,9 @@ Panel {
 
                   // The same small-caps label as the rails above, so it reads as
                   // part of the panel's furniture rather than as a caption
-                  // somebody left on.
+                  // somebody left on. Grey like its twin below: the two toggles
+                  // are the panel's two asides and neither spends a colour that
+                  // means something else.
                   Text {
                     id: statsHeader
                     anchors.left: parent.left
@@ -3025,8 +3123,6 @@ Panel {
                       // pressing it, so it wears the quiet fill of an inert chip
                       // and never the inverted fill of a selected one.
                       color: Qt.alpha(root.contentForeground, 0.07)
-                      border.width: Style.normalBorderWidth
-                      border.color: Qt.alpha(root.contentForeground, 0.16)
 
                       Text {
                         id: statText
