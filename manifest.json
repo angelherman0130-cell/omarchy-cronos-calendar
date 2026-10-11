@@ -5,7 +5,7 @@
   "version": "2.0.0",
   "author": "angelherman",
   "license": "MIT",
-    "description": "Calendar, tasks and reminders — on the clock you already look at.",
+  "description": "Calendar, tasks and reminders — on the clock you already look at.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Cronos-Calendar",
-  "description": "Click the clock, get your day: every task on its day, countdowns, priorities and reminders that survive a reboot.",
+    "description": "Click the clock, get your day: every task on its day, countdowns, priorities and reminders that survive a reboot.",
     "category": "Time",
     "allowMultiple": false
   },
