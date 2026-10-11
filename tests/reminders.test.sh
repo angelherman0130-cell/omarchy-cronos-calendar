@@ -55,6 +55,7 @@ REAL_JQ="$(command -v jq)"
 REAL_MKDIR="$(command -v mkdir)"
 REAL_MV="$(command -v mv)"
 REAL_RM="$(command -v rm)"
+REAL_CHMOD="$(command -v chmod)"
 
 cat > "$WORK/bin/date" <<EOF
 #!/usr/bin/env bash
@@ -70,7 +71,10 @@ EOF
 # argv into the log, then the real thing. jq is in that list even though it
 # only ever reads the store and answers on a pipe, because "it probably does
 # not see the title" is exactly the assumption this log exists to replace.
-for pair in "jq:$REAL_JQ" "mkdir:$REAL_MKDIR" "mv:$REAL_MV" "rm:$REAL_RM"; do
+# chmod is wrapped too — secure-store leans on it, and the +x calls below go
+# through $REAL_CHMOD so wrapping it cannot unmake its own wrapper.
+for pair in "jq:$REAL_JQ" "mkdir:$REAL_MKDIR" "mv:$REAL_MV" "rm:$REAL_RM" \
+  "chmod:$REAL_CHMOD"; do
   name="${pair%%:*}"
   real="${pair#*:}"
   cat > "$WORK/bin/$name" <<EOF
@@ -78,9 +82,9 @@ for pair in "jq:$REAL_JQ" "mkdir:$REAL_MKDIR" "mv:$REAL_MV" "rm:$REAL_RM"; do
 printf '%s %s\n' "$name" "\$*" >> "\${RECTEST_ARGV_LOG:?}"
 exec "$real" "\$@"
 EOF
-  chmod +x "$WORK/bin/$name"
+  "$REAL_CHMOD" +x "$WORK/bin/$name"
 done
-chmod +x "$WORK/bin/date"
+"$REAL_CHMOD" +x "$WORK/bin/date"
 
 # The alert's players, all four, all fake. Each writes its own name and its
 # arguments to one log so a scenario can say which one was reached and with
@@ -358,6 +362,67 @@ if [[ ! -s "$RECTEST_SOUND_LOG" ]]; then
   ok "no player at all is silent"
 else
   bad "no player at all is silent" "| $(cat "$RECTEST_SOUND_LOG")"
+fi
+
+# ---- the store is born locked down -----------------------------------------
+#
+# The widget's FileView must never be the process that creates the store:
+# QML's atomic write makes the file at the umask's mode — 0644 under an
+# ordinary login — and the chmod that would fix it lands after, which is an
+# interval in which every task name is readable by any other local account.
+# What has to hold: secure-store makes the file 0600 and its directory 0700
+# from nothing, corrects a store someone left 0644 without reading it, and
+# is idempotent enough to run at every panel load.
+new_store="$WORK/newhome/.local/state/omarchy/clock-tasks.json"
+
+if bash "$SCRIPT" secure-store "$new_store" >/dev/null 2>&1; then
+  ok "secure-store exits cleanly on a fresh path"
+else
+  bad "secure-store exits cleanly on a fresh path"
+fi
+
+mode="$(stat -c %a "$new_store" 2>/dev/null || printf missing)"
+if [[ "$mode" == "600" ]]; then
+  ok "a store created by secure-store is owner-only"
+else
+  bad "a store created by secure-store is owner-only" "| mode: $mode"
+fi
+
+dirmode="$(stat -c %a "$(dirname "$new_store")" 2>/dev/null || printf missing)"
+if [[ "$dirmode" == "700" ]]; then
+  ok "the state directory secure-store creates is owner-only"
+else
+  bad "the state directory secure-store creates is owner-only" "| mode: $dirmode"
+fi
+
+# An existing store keeps its bytes and gets its mode corrected — the write
+# path the panel uses (QSaveFile) preserves the permissions of the file it
+# replaces, so fixing the mode once here is what keeps every later save 0600.
+printf '{"version":2,"days":{}}\n' > "$new_store"
+"$REAL_CHMOD" 644 "$new_store"
+bash "$SCRIPT" secure-store "$new_store" >/dev/null 2>&1
+mode="$(stat -c %a "$new_store" 2>/dev/null || printf missing)"
+content="$(cat "$new_store")"
+if [[ "$mode" == "600" ]]; then
+  ok "secure-store corrects an existing store back to owner-only"
+else
+  bad "secure-store corrects an existing store back to owner-only" "| mode: $mode"
+fi
+if [[ "$content" == '{"version":2,"days":{}}' ]]; then
+  ok "secure-store never rewrites the store's contents"
+else
+  bad "secure-store never rewrites the store's contents" "| content: $content"
+fi
+
+# Idempotent: the panel calls it on every load, so a second run over the same
+# store must be a no-op in every way a caller could observe.
+bash "$SCRIPT" secure-store "$new_store" >/dev/null 2>&1
+mode="$(stat -c %a "$new_store" 2>/dev/null || printf missing)"
+content="$(cat "$new_store")"
+if [[ "$mode" == "600" && "$content" == '{"version":2,"days":{}}' ]]; then
+  ok "secure-store is idempotent"
+else
+  bad "secure-store is idempotent" "| mode: $mode | content: $content"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

@@ -167,13 +167,16 @@ ever been opened:
     bash tests/reminders.test.sh
 
 It fakes `date` and all four sound players on `PATH`, and wraps every other
-command the script may run — jq, mkdir, mv, rm — in one that records its
+command the script may run — jq, mkdir, mv, rm, chmod — in one that records its
 arguments and then runs the real thing. So every case can be run at the day
 and the hour it is actually about instead of only at the one today happens to
 be; the alert can be asserted on which player it reached and with which
 sample, rather than only that something played; and the title's journey can
 be asserted where it matters — it is in the queue file, the file is `0600`,
 and no child process of that run was handed the title on a command line.
+`secure-store`, the mode that makes sure the task store is born `0600` before
+the widget can write it, is covered the same way: created owner-only, mode
+corrected on an existing file, contents never touched.
 
 Each fixture gets its own file. They used to share one, which was fine while
 each was written immediately before it was read; a later fixture would quietly

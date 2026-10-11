@@ -334,13 +334,19 @@ and this plugin adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Security
 
-- **The task store is written `0600`.** `clock-tasks.json` holds every task's
+- **The task store is born `0600`.** `clock-tasks.json` holds every task's
   name, description, deadline and reminder, and `$HOME` is traversable by every
-  other local account, so the plain `0644` an atomic write hands back made the
-  whole list readable by anyone logged into the machine. The mode is asserted
-  on every read-back — after each save and on each panel load — rather than
-  once at creation, because atomic writes recreate the file and give it the
-  umask's mode again. Nothing about the store's contents or its path changed.
+  other local account. The store used to be created by the widget's own
+  `FileView` and only `chmod`ed afterwards, which left an interval — from the
+  atomic write that made the file at the umask's mode until the chmod landed
+  — in which the whole list was readable by anyone logged into the machine. The
+  panel no longer creates it: `ClockReminders.sh secure-store` makes the file
+  `0600` inside a `0700` directory before the `FileView` is given the path at
+  all, and an atomic replacement preserves the permissions of the file it
+  replaces, so every later save inherits the mode instead of resetting it. The
+  mode is still asserted on each panel load as the backstop for a store whose
+  permissions were changed underneath the widget. Nothing about the store's
+  contents or its path changed.
 - **A reminder's title never leaves the widget.** Two roads out of this
   plugin's store were both command lines. `omarchy-notification-send` takes
   its headline as an argument, and `/proc/<pid>/cmdline` is readable by every

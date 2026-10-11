@@ -16,6 +16,16 @@
 #   run <store.json>       Queue the reminders that are due right now. This is
 #                          what the timer calls, and what a human can call by
 #                          hand to check it works.
+#   secure-store <store.json>
+#                          Make sure the store file exists and is owner-only
+#                          (0600), inside an owner-only directory, without
+#                          ever reading or writing its contents. The widget
+#                          runs this before its own FileView is given the
+#                          path: QML's atomic replacement keeps the
+#                          permissions of an existing file, so a store that
+#                          is already 0600 stays 0600 through every save —
+#                          and creation is the one moment that could have
+#                          made it 0644 instead.
 #
 # Why the timer lives here instead of in the bar widget: the widget would have
 # to arm a timer with systemd-run every time it opened, and a timer armed that
@@ -493,13 +503,39 @@ notify_due() {
   return 0
 }
 
+# ---- Store creation
+#
+# The store is born here, not by the widget's FileView. QML's atomic write
+# creates the file with the umask's mode — 0644 under an ordinary login — and
+# only a later chmod would lock it down, which leaves an interval in which
+# every task name and note is readable by any other local account. The panel
+# calls this before handing the path to its FileView; an existing file is
+# never opened, read or rewritten, only its mode is asserted, so a store
+# already holding data is touched in exactly one byte-free way. The directory
+# is locked down for the same reason the file is: $HOME is traversable by
+# everyone, and a 0600 file under a world-readable path is still reachable
+# by anything that guesses its name.
+secure_store() {
+  local store="${1:-$DEFAULT_STORE}"
+  local dir="${store%/*}"
+  [[ "$dir" != "$store" ]] || dir="."
+
+  ( umask 077
+    mkdir -p "$dir" && chmod 700 "$dir" || exit 1
+    if [[ ! -e "$store" ]]; then
+      : >"$store" || exit 1
+    fi
+    chmod 600 "$store" )
+}
+
 main() {
   local mode="${1:-run}"
   case "$mode" in
     install) install_units "${2:-$DEFAULT_STORE}" "${3:-}" ;;
     run | "") notify_due "${2:-$DEFAULT_STORE}" ;;
+    secure-store) secure_store "${2:-$DEFAULT_STORE}" ;;
     *)
-      printf 'usage: %s [install [store.json] [script-path]] | [run [store.json]]\n' "${0##*/}" >&2
+      printf 'usage: %s [install [store.json] [script-path]] | [run [store.json]] | [secure-store [store.json]]\n' "${0##*/}" >&2
       return 2
       ;;
   esac

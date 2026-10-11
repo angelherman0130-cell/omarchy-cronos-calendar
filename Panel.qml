@@ -53,6 +53,10 @@ Panel {
   readonly property string taskStorePath: Color.stateHome + "/omarchy/clock-tasks.json"
   property var taskStore: Tasks.empty()
   property bool taskStoreLoaded: false
+  // Flips once the script has secured the store (see storeSecure below). The
+  // FileView keeps an empty path until then, so QML cannot be the process
+  // that creates the file.
+  property bool storeReady: false
   // Monotonic within a session, so two tasks typed in the same millisecond
   // still get distinct ids — a repeated id would leave the second one
   // untickable.
@@ -1070,6 +1074,22 @@ Panel {
       root.taskStorePath])
   }
 
+  // The store's existence and its mode belong to the script, not to this
+  // file: QML's atomic write would create the file with the umask's mode —
+  // 0644 under an ordinary login — and only a later chmod could lock it,
+  // leaving an interval in which every task name is readable by any other
+  // local account. ClockReminders.sh secure-store creates the file 0600 in
+  // a 0700 directory without opening it, and an existing file keeps its
+  // permissions across QSaveFile's replacement, so this runs once and the
+  // FileView below is not given the path until it has finished — the store
+  // is never seen by QML before it is already owner-only.
+  Process {
+    id: storeSecure
+    command: ["bash", root.reminderScriptPath, "secure-store",
+      root.taskStorePath]
+    onExited: root.storeReady = true
+  }
+
   function taskCountFor(key) {
     return Tasks.count(root.taskStore, key)
   }
@@ -1153,10 +1173,11 @@ Panel {
 
   // The store holds task names and notes, and $HOME is traversable by every
   // other local account, so a plain 0644 file here is readable by anyone on
-  // the machine. atomicWrites replaces the file on every save, which hands it
-  // back with the umask's mode, so the file is locked down on every read-back
-  // rather than once at creation — that is also the first moment the file is
-  // known to exist.
+  // the machine. The load-bearing half of that is creation — secure-store
+  // above makes sure the file is already 0600 before QML ever sees the path,
+  // and QSaveFile's replacement keeps an existing file's permissions — and
+  // this chmod is the backstop for a store whose mode was changed underneath
+  // the widget since the last read, nothing more.
   function secureStore() {
     Quickshell.execDetached(["chmod", "600", root.taskStorePath])
   }
@@ -1245,12 +1266,19 @@ Panel {
   // adding, editing or completing a task cannot leave it stale, and there is
   // nothing to re-derive. The store is re-read from disk on every firing
   // instead, which is what makes the panel and the timer independent of each
-  // other.
-  Component.onCompleted: root.installReminderTimer()
+  // other. secure-store goes first for the same reason it exists at all: the
+  // store must be on disk, owner-only, before any code here can write it.
+  Component.onCompleted: {
+    storeSecure.running = true
+    root.installReminderTimer()
+  }
 
   FileView {
     id: tasksFile
-    path: root.taskStorePath
+    // Empty until storeSecure has exited: a FileView pointed at a path that
+    // does not exist yet would have the widget, not the script, create the
+    // file — at the umask's mode, which is the exposure this gate removes.
+    path: root.storeReady ? root.taskStorePath : ""
     watchChanges: true
     atomicWrites: true
     printErrors: false
