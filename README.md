@@ -64,8 +64,9 @@ rm -f ~/.local/state/omarchy/clock-tasks.json \
 
 - **Clock and calendar.** Click the bar label: week or month grid with ISO
   weeks, month stepping and the year rail — everything the stock clock had.
-- **Tasks per day.** Add one from the field at the top, tick it off, edit or
-  delete it from the row. Optional description under the name.
+- **Tasks per day.** Add one from the field at the top, edit or delete it from
+  the row, and click its name to expand or collapse its description. Only the
+  checkbox at the left changes whether the task is complete.
 - **Everything outstanding, soonest first.** Every pending task, grouped by
   its day, with a countdown (`2d 3h`, `45m`) on each deadline. Click a group
   heading to narrow to that day, click a day to widen back out.

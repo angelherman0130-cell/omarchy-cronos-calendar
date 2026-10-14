@@ -52,6 +52,9 @@ Item {
   // kept here, because two rows open at once would be two editors competing for
   // the same keyboard with nothing on screen saying which one has it.
   property bool editing: false
+  // Expanded on row click; keeping the state on this delegate lets multiple
+  // descriptions stay open while the panel remains the owner of task data.
+  property bool noteExpanded: false
 
   // Which tag the list is narrowed to, or "" for all of them. Handed down from
   // the panel so a chip on this row can show itself as the one being followed
@@ -98,15 +101,13 @@ Item {
   // Not "> 0": 0 is the day-of reminder, which is on. Only null is off.
   readonly property bool remindSet: Tasks.hasReminder(task)
 
-  // The note, as the row can afford to draw it: at most two lines. Two is the
-  // whole budget — the row is 424px wide and already carries a checkbox, a
-  // deadline and a reminder, and a third line of note turns the list into a
-  // column of paragraphs. The cap lives in noteLines rather than here so the
-  // stored note is never shortened by the fact that a row could not show all of
-  // it: what was written down and what is legible are different questions.
-  readonly property var noteShown: Tasks.noteLines(task.note, 2)
+  // Keep long descriptions compact until the row is clicked. The editor and the
+  // store always retain the full note; this limit only controls the collapsed
+  // preview. MAX_NOTE_LENGTH is also the maximum possible number of lines.
+  readonly property var noteShown: Tasks.noteLines(task.note,
+    row.noteExpanded ? Tasks.MAX_NOTE_LENGTH : 2)
   readonly property bool noteShownAll: Tasks.hasNote(task)
-    && row.noteShown.length === Tasks.noteLines(task.note, 99).length
+    && row.noteShown.length === Tasks.noteLines(task.note, Tasks.MAX_NOTE_LENGTH).length
 
   // How long is left, or "" when there is nothing left to count: a finished
   // task, a deadline that has already gone by, or no deadline at all.
@@ -301,11 +302,10 @@ Item {
     visible: row.outstanding
   }
 
-  // The checkbox. Filled in the section's own colour when done, hollow in the
-  // pending colour when not, and the whole row toggles with it — a small box is
-  // a poor thing to have to hit.
+  // The checkbox is the only control that changes completion state.
   Rectangle {
     id: box
+    z: 1
     anchors.left: parent.left
     anchors.leftMargin: Style.spacing.sm
     // On the name's middle rather than the row's: with a note under it, the row
@@ -329,6 +329,12 @@ Item {
       font.family: row.contentFontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: row.toggled(row.task.id)
     }
   }
 
@@ -452,6 +458,7 @@ Item {
 
         width: noteColumn.width
         textFormat: Text.PlainText
+        wrapMode: row.noteExpanded ? Text.Wrap : Text.NoWrap
         // The ellipsis goes on the last line *shown*, not the last line stored:
         // what is cut is always the one at the bottom of the row, so marking
         // some earlier line would point at text that is still there.
@@ -460,7 +467,7 @@ Item {
         // which counts the Repeater itself and so is always one higher — a
         // comparison that quietly never matches and drops the ellipsis entirely.
         text: modelData + (index === row.noteShown.length - 1 && !row.noteShownAll ? " …" : "")
-        elide: Text.ElideRight
+        elide: row.noteExpanded ? Text.ElideNone : Text.ElideRight
         color: Qt.alpha(row.contentForeground, row.task.done ? 0.32 : 0.6)
         font.family: row.contentFontFamily
         font.pixelSize: Style.font.caption
@@ -472,14 +479,13 @@ Item {
     id: rowMouse
     anchors.fill: parent
     hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    // Dead while the row is open for editing. The editor is drawn above this
-    // MouseArea, so clicks in its fields never reach here — but a click on the
-    // row's own padding beside them would, and that would tick the task off
-    // while its text is being corrected. Toggling is one click away on the
-    // checkbox's row once the edit is saved.
+    // The row click expands or collapses the description. Completion belongs
+    // only to the checkbox above, so clicking text can never finish a task.
     enabled: !row.editing
-    onClicked: row.toggled(row.task.id)
+    cursorShape: Tasks.hasNote(row.task) ? Qt.PointingHandCursor : Qt.ArrowCursor
+    onClicked: {
+      if (Tasks.hasNote(row.task)) row.noteExpanded = !row.noteExpanded
+    }
   }
 
   // The deadline and the reminder, in that order: when it is due is the fact
@@ -581,9 +587,7 @@ Item {
     }
 
     // Editing is behind a button rather than behind a click on the name, because
-  // clicking the row is already spoken for: it ticks the task off, and a click
-  // that meant one thing would silently start meaning another. The button is
-  // one press away and says what it does on hover.
+    // the row click now expands its description.
   PanelActionButton {
     id: editButton
     iconText: "󰏫"
