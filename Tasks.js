@@ -54,7 +54,19 @@ function empty() {
 }
 
 function isDayKey(value) {
-  return DAY_KEY_PATTERN.test(String(value === undefined || value === null ? "" : value))
+  var key = String(value === undefined || value === null ? "" : value)
+  if (key.length !== 10 || !DAY_KEY_PATTERN.test(key)) return false
+
+  var parts = key.split("-")
+  var year = Number(parts[0])
+  var month = Number(parts[1]) - 1
+  var day = Number(parts[2])
+  var date = new Date(0)
+  date.setUTCHours(0, 0, 0, 0)
+  date.setUTCFullYear(year, month, day)
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month
+    && date.getUTCDate() === day
 }
 
 function cleanText(value) {
@@ -1038,7 +1050,9 @@ function countByPriority(tasks) {
 // the machine is would make the streak and the weekly tally disagree.
 function dayKeyShift(dayKey, deltaDays) {
   if (!isDayKey(dayKey)) return ""
-  var date = new Date(String(dayKey) + "T00:00:00")
+  // Day keys are timezone-free calendar dates. Parse at UTC midnight so the
+  // UTC arithmetic below starts on the same key in every user's timezone.
+  var date = new Date(String(dayKey) + "T00:00:00Z")
   var delta = Number(deltaDays)
   if (!isFinite(delta)) delta = 0
   date.setUTCDate(date.getUTCDate() + delta)
@@ -1052,7 +1066,9 @@ function streak(store, todayKey) {
 
   var days = store && store.days ? store.days : {}
   var count = 0
-  var current = new Date(todayKey + "T00:00:00")
+  // Keep the key-to-date conversion in UTC, matching the UTC getters below.
+  // Local midnight can be the previous UTC day for users east of Greenwich.
+  var current = new Date(todayKey + "T00:00:00Z")
 
   for (var i = 0; i < 365; i++) {
     var key = current.getUTCFullYear() + "-" + pad2(current.getUTCMonth() + 1) + "-" + pad2(current.getUTCDate())

@@ -92,12 +92,16 @@ function keyForDate(date) {
 // when it is a date the calendar does not have, so "2026-02-30" cannot quietly
 // become the 2nd of March and hand back somebody else's week.
 function parseDayKey(key) {
-  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key === undefined || key === null ? "" : key))
+  var text = String(key === undefined || key === null ? "" : key)
+  if (text.length !== 10) return null
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
   if (match === null) return null
   var year = Number(match[1])
   var month = Number(match[2]) - 1
   var day = Number(match[3])
-  var date = new Date(year, month, day)
+  var date = new Date(0)
+  date.setHours(0, 0, 0, 0)
+  date.setFullYear(year, month, day)
   if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null
   return date
 }

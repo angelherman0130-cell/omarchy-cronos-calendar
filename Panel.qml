@@ -57,6 +57,8 @@ Panel {
   // FileView keeps an empty path until then, so QML cannot be the process
   // that creates the file.
   property bool storeReady: false
+  // Whether secureStore has already run this session — see the note there.
+  property bool storeSecured: false
   // Monotonic within a session, so two tasks typed in the same millisecond
   // still get distinct ids — a repeated id would leave the second one
   // untickable.
@@ -1178,7 +1180,15 @@ Panel {
   // and QSaveFile's replacement keeps an existing file's permissions — and
   // this chmod is the backstop for a store whose mode was changed underneath
   // the widget since the last read, nothing more.
+  // Guarded so it runs at most once per session. chmod is a metadata change,
+  // but this file is watched by inotify, so calling it from onLoaded made every
+  // load produce a fresh file event, which reloaded the file, which loaded it
+  // again — a loop that held the shell at full CPU with the panel closed. The
+  // file's mode is fixed at creation by secure-store above and preserved across
+  // QSaveFile's replacement, so a second pass has nothing left to repair.
   function secureStore() {
+    if (root.storeSecured) return
+    root.storeSecured = true
     Quickshell.execDetached(["chmod", "600", root.taskStorePath])
   }
 

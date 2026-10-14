@@ -252,6 +252,14 @@ Item {
 
   height: row.editing ? row.editHeight : row.baseHeight + row.noteBlockHeight
 
+  // HoverHandler observes the whole row without competing with the MouseAreas
+  // that sit above it. In particular, the action buttons must not disable
+  // themselves when they take hover away from rowMouse; doing so makes the
+  // pointer alternate between the buttons and the row and causes flicker.
+  HoverHandler {
+    id: rowHover
+  }
+
   // Take the keyboard as soon as the row opens for editing, so the name is
   // already being typed into rather than waiting for a second click. Deferred to
   // the next turn of the loop because `editing` is set from the panel and the
@@ -275,7 +283,7 @@ Item {
   Rectangle {
     anchors.fill: parent
     radius: Style.cornerRadius
-    color: rowMouse.containsMouse
+    color: rowHover.hovered
       ? Style.hoverFillFor(row.contentForeground, Color.accent)
       : "transparent"
   }
@@ -565,7 +573,7 @@ Item {
     // need while reading. They light up with the row's own hover, and stay
     // while editing. `enabled` rides along so a faded button cannot be
     // pressed by a click that lands where the glyph used to be.
-    enabled: rowMouse.containsMouse || row.editing
+    enabled: rowHover.hovered || row.editing
     opacity: enabled ? 1 : 0
 
     Behavior on opacity {

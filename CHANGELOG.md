@@ -7,6 +7,8 @@ and this plugin adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-13
+
 ### Added
 
 - **A `DONE` toggle for the finished work.** Closed by default at the foot of
@@ -307,6 +309,23 @@ and this plugin adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **The task row actions no longer flicker on hover.** Their visibility and the
+  row highlight now follow a `HoverHandler` on the row, which does not compete
+  with the click areas above it. Previously the buttons depended on a
+  `MouseArea` underneath them and could disable themselves as the pointer
+  crossed onto them.
+- **Calendar day keys are checked as real dates.** The task store previously
+  accepted impossible dates such as `2026-02-30`, leaving tasks saved under a
+  day the calendar could never display. The store and calendar now reject
+  impossible dates and strings with trailing characters, and their date
+  construction handles four-digit years consistently.
+- **Date-key arithmetic is timezone-independent.** Day shifts and completion
+  streaks now convert date keys at UTC midnight before using UTC arithmetic,
+  preventing off-by-one results in timezones east of Greenwich.
+- **Securing the task file no longer causes a reload loop.** The fallback
+  permission check is limited to once per panel session, avoiding repeated
+  `chmod` file events from triggering reloads while preserving the initial
+  owner-only file creation.
 - **A reminder no longer dies with the day it was scheduled for.** The script
   matched the reminder day exactly, so a task set to nag five days out was
   announced on that one date and on no other — and if the machine was switched
