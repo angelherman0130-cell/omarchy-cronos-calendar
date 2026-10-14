@@ -805,8 +805,8 @@ test("priorityLabel names the three levels and nothing else", () => {
 
 test("priorityGlyph draws a mark per level, empty when unset", () => {
   assert.equal(Tasks.priorityGlyph("high"), "▲")
-  assert.equal(Tasks.priorityGlyph("medium"), "●")
-  assert.equal(Tasks.priorityGlyph("low"), "○")
+  assert.equal(Tasks.priorityGlyph("medium"), "━")
+  assert.equal(Tasks.priorityGlyph("low"), "▼")
   assert.equal(Tasks.priorityGlyph("nonsense"), "")
   assert.equal(Tasks.priorityGlyph(null), "")
 })

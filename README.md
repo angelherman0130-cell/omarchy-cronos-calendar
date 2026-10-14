@@ -34,6 +34,16 @@ and add it to a bar section:
 omarchy bar put angelherman.cronos-calendar center
 ```
 
+## Update
+
+For plugins installed with `omarchy plugin add`, pull the latest version with:
+
+```bash
+omarchy plugin update angelherman.cronos-calendar
+```
+
+If you copied the files manually, update that checkout yourself.
+
 ## Uninstall
 
 ```bash
@@ -77,8 +87,9 @@ rm -f ~/.local/state/omarchy/clock-tasks.json \
   reminder window, and a missed one fires when the machine returns. The card
   is drawn by the widget itself, so the title never travels through the
   desktop's notification stack.
-- **Priority and tags.** Four priorities (`▲ ● ○`), tags typed as `#tag` —
-  clicking a chip filters the list. Search by name, description or tag.
+- **Priority and tags.** High is a red `▲`, medium a yellow `━`, low a blue `▼`,
+  and none a gray `○`. Tags are typed as `#tag`; clicking a chip filters the
+  list. Search by name, description or tag.
 - **Finished work on demand.** A `DONE` toggle at the foot of the list opens
   the completed tasks — grouped by day, most recent first in the wider view,
   just that day's in a day's. Each heading jumps to its day.

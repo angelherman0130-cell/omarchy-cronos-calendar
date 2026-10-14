@@ -5,6 +5,14 @@ All notable changes to this plugin are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this plugin adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-10-14
+
+### Changed
+
+- Enlarged the task completion checkbox and priority control for easier clicking.
+- Priority marks now use an up triangle for high, a horizontal line for medium,
+  and a down triangle for low, with matching red, yellow, and blue colors.
+
 ## [2.2.0] - 2026-10-13
 
 ### Changed

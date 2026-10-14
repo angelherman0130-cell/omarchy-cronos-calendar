@@ -312,7 +312,7 @@ Item {
     // is taller than the name and centring the box on the row would leave it
     // sitting between the name and the note rather than beside the name.
     anchors.verticalCenter: label.verticalCenter
-    width: Style.spacing.md * 2
+    width: Style.spacing.md * 2 + Style.spacing.xs
     height: width
     radius: Style.cornerRadius
     color: row.task.done ? row.doneColor : "transparent"
@@ -327,7 +327,7 @@ Item {
       text: "✓"
       color: Color.popups.background
       font.family: row.contentFontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.bodySmall
       font.bold: true
     }
 
@@ -348,32 +348,41 @@ Item {
   // to nothing with no priority, which kept rows laid out as they had been
   // before priorities existed and also hid the only control that sets one:
   // a mark that only appears once a value exists is a control nobody can find.
-  // The faint circle is the affordance. Every row lines up on its name again,
-  // because every row now carries the same mark.
+  // The mark stays visible on every row, including tasks without a priority,
+  // so every task name starts at the same position.
   //
-  // The mark is deliberately colourless: red is already spoken for by work
-  // still owed, so a high-priority task would have read as an overdue one, and
-  // green is finished. The three shapes say which priority it is, and how
-  // faint the circle is says whether any of them is set.
+  // The symbol uses the fixed priority colours from Tasks.js: blue for low,
+  // yellow for medium, red for high, and grey when no priority is set.
   //
   // `z` lifts it over `rowMouse`, which is declared further down and would
   // otherwise swallow the press and tick the task off instead. Changing what a
   // task owes and marking it done are two different acts, and only one of them
   // was asked for.
-  Text {
+  Item {
     id: priorityMark
-    textFormat: Text.PlainText
     z: 1
     readonly property bool hasPriority: Tasks.priorityGlyph(row.task.priority) !== ""
     visible: !row.editing
-    width: visible ? implicitWidth : 0
+    width: visible ? box.width + Style.spacing.sm * 4 : 0
+    // Keep the larger hit target inside this row and the smallest task-list
+    // gap, so it cannot intercept a press meant for the task above or below.
+    height: Math.min(box.height + Style.spacing.sm * 4,
+      row.baseHeight + Style.spacing.xxs)
     anchors.left: box.right
     anchors.leftMargin: visible ? Style.spacing.xs : 0
     anchors.verticalCenter: label.verticalCenter
-    text: hasPriority ? Tasks.priorityGlyph(row.task.priority) : "○"
-    color: Qt.alpha(row.contentForeground, hasPriority ? 0.72 : 0.3)
-    font.family: row.contentFontFamily
-    font.pixelSize: Style.font.caption
+
+    readonly property color priorityColor: Tasks.priorityColor(row.task.priority)
+
+    Text {
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: priorityMark.hasPriority
+        ? Tasks.priorityGlyph(row.task.priority) : "○"
+      color: priorityMark.priorityColor
+      font.family: row.contentFontFamily
+      font.pixelSize: box.width * 1.5
+    }
 
     // The tooltip names the state you land in, not the one you are leaving.
     // "click to change" makes the reader guess, and guessing wrong is free to
@@ -1003,7 +1012,7 @@ Item {
       Text {
         id: priorityProbe
         visible: false
-        text: "● Medium"
+        text: "━ Medium"
         font.family: row.contentFontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: true
@@ -1013,8 +1022,8 @@ Item {
         model: [
           { value: null, label: "None" },
           { value: "high", label: "▲ High" },
-          { value: "medium", label: "● Medium" },
-          { value: "low", label: "○ Low" }
+          { value: "medium", label: "━ Medium" },
+          { value: "low", label: "▼ Low" }
         ]
 
         delegate: Rectangle {

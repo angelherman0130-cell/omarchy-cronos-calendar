@@ -290,8 +290,8 @@ function priorityGlyph(value) {
   var p = cleanPriority(value)
   if (p === null) return ""
   if (p === "high") return "▲"
-  if (p === "medium") return "●"
-  return "○"
+  if (p === "medium") return "━"
+  return "▼"
 }
 
 // What one press on the mark walks to. Loudest first from a standing start,
